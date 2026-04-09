@@ -224,6 +224,16 @@ async function runPostBookingTasks(
     console.error("Claude research error (non-fatal):", err);
   }
 
+  // Shared lookup used in both Google Doc and email
+  const domainLabels: Record<string, string> = {
+    leadership: "Leadership & People",
+    commercial: "Commercial",
+    financial: "Financial",
+    operations: "Operations",
+    legal: "Legal",
+    technology: "Technology & Data",
+  };
+
   // 2. Google Doc
   try {
     const qaLines = questionsAndAnswers.length > 0
@@ -233,15 +243,6 @@ async function runPostBookingTasks(
           ...questionsAndAnswers.map((qa) => `${qa.question}: ${qa.answer}`),
         ]
       : [];
-
-    const domainLabels: Record<string, string> = {
-      leadership: "Leadership & People",
-      commercial: "Commercial",
-      financial: "Financial",
-      operations: "Operations",
-      legal: "Legal",
-      technology: "Technology & Data",
-    };
 
     const curatedQLines: string[] = [];
     if (curatedQuestions) {
