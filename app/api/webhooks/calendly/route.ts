@@ -39,13 +39,23 @@ function verifyCalendlySignature(
 
 // ── Research prompt ─────────────────────────────────────────────────────────
 
-function buildResearchPrompt(name: string, email: string, scheduledAt: string): string {
+function buildResearchPrompt(
+  name: string,
+  email: string,
+  scheduledAt: string,
+  phone: string | null,
+  questionsAndAnswers: { question: string; answer: string }[]
+): string {
   const domain = email.split("@")[1] ?? "";
+  const qaSection = questionsAndAnswers.length > 0
+    ? "\nQualifying answers from booking form:\n" +
+      questionsAndAnswers.map((qa) => `- ${qa.question}: ${qa.answer}`).join("\n")
+    : "";
   return `You are a pre-meeting research assistant for Valuation Realized, an M&A advisory firm specialising in SME founder exits.
 
-Invitee: ${name} (${email})
+Invitee: ${name} (${email})${phone ? `\nPhone: ${phone}` : ""}
 Company domain: ${domain}
-Meeting time: ${scheduledAt}
+Meeting time: ${scheduledAt}${qaSection}
 
 Research this person and their company. Provide:
 1. 3-5 bullet points of key background (company stage, size, industry, any public signals)
@@ -83,7 +93,12 @@ export async function POST(request: NextRequest) {
     event: string;
     payload: {
       event?: { name?: string; start_time?: string };
-      invitee?: { name?: string; email?: string };
+      invitee?: {
+        name?: string;
+        email?: string;
+        text_reminder_number?: string;
+        questions_and_answers?: { question: string; answer: string }[];
+      };
     };
   };
 
@@ -103,6 +118,8 @@ export async function POST(request: NextRequest) {
   const name = invitee?.name ?? "Unknown";
   const email = (invitee?.email ?? "").toLowerCase().trim();
   const scheduledAt = event?.start_time ?? new Date().toISOString();
+  const phone = invitee?.text_reminder_number ?? null;
+  const questionsAndAnswers = invitee?.questions_and_answers ?? [];
 
   if (!email) {
     return NextResponse.json({ error: "Missing invitee email" }, { status: 400 });
@@ -128,7 +145,7 @@ export async function POST(request: NextRequest) {
   const engagementId = inserted.id;
 
   // Async: Claude research + Google Doc + Brevo notify (errors don't fail webhook)
-  void runPostBookingTasks(engagementId, name, email, scheduledAt);
+  void runPostBookingTasks(engagementId, name, email, scheduledAt, phone, questionsAndAnswers);
 
   return NextResponse.json({ received: true });
 }
@@ -137,7 +154,9 @@ async function runPostBookingTasks(
   engagementId: string,
   name: string,
   email: string,
-  scheduledAt: string
+  scheduledAt: string,
+  phone: string | null,
+  questionsAndAnswers: { question: string; answer: string }[]
 ) {
   let research: string | null = null;
   let fitScore: number | null = null;
@@ -153,7 +172,7 @@ async function runPostBookingTasks(
     const res = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 1024,
-      messages: [{ role: "user", content: buildResearchPrompt(name, email, scheduledAt) }],
+      messages: [{ role: "user", content: buildResearchPrompt(name, email, scheduledAt, phone, questionsAndAnswers) }],
     });
 
     const text = res.content[0].type === "text" ? res.content[0].text : "";
@@ -178,10 +197,20 @@ async function runPostBookingTasks(
 
   // 2. Google Doc
   try {
+    const qaLines = questionsAndAnswers.length > 0
+      ? [
+          "",
+          "=== BOOKING FORM ANSWERS ===",
+          ...questionsAndAnswers.map((qa) => `${qa.question}: ${qa.answer}`),
+        ]
+      : [];
+
     const docContent = [
       `Meeting Brief: ${name}`,
       `Email: ${email}`,
+      phone ? `Phone: ${phone}` : null,
       `Scheduled: ${new Date(scheduledAt).toLocaleString()}`,
+      ...qaLines,
       "",
       "=== RESEARCH ===",
       research ?? "(Research unavailable)",
@@ -191,7 +220,7 @@ async function runPostBookingTasks(
       `Reasoning: ${fitReasoning ?? "N/A"}`,
       `Likely Objection: ${likelyObjection ?? "N/A"}`,
       `Meeting Angle: ${meetingAngle ?? "N/A"}`,
-    ].join("\n");
+    ].filter(Boolean).join("\n");
 
     const url = await createBriefDoc(`Brief: ${name} — ${new Date(scheduledAt).toLocaleDateString()}`, docContent);
     briefDocUrl = url;
