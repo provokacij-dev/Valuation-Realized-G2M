@@ -296,6 +296,15 @@ async function runPostBookingTasks(
   // 4. Brevo notification to Vaiga
   const vaigaEmail = process.env.NOTIFICATION_EMAIL ?? "vaiga@valuationrealized.com";
   try {
+    // Derive company name from email domain (e.g. tcsldubai.com → TCSL Dubai)
+    const emailDomain = email.split("@")[1] ?? "";
+    const companyName = emailDomain
+      .replace(/\.(com|co|net|org|io|ae|uk|au|de|fr|sg)(\.\w+)?$/, "")
+      .replace(/[-_]/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+
+    const dateStr = new Date(scheduledAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+
     const curatedQHtml = curatedQuestions
       ? Object.entries(curatedQuestions)
           .map(([domain, qs]) =>
@@ -306,14 +315,16 @@ async function runPostBookingTasks(
 
     await sendTransactionalEmail({
       to: vaigaEmail,
-      subject: `New booking: ${name} — ${new Date(scheduledAt).toLocaleDateString()}`,
+      subject: `Sales brief - ${name}, ${companyName}, ${dateStr}`,
       htmlContent: `
-        <h2>New Calendly Booking</h2>
-        <p><strong>${name}</strong> (${email})${phone ? ` · ${phone}` : ""} — ${new Date(scheduledAt).toLocaleString()}</p>
+        <h2>Sales Brief: ${name}, ${companyName}</h2>
+        <p><strong>Email:</strong> ${email}${phone ? ` &nbsp;·&nbsp; <strong>Phone:</strong> ${phone}` : ""}</p>
+        <p><strong>Meeting:</strong> ${new Date(scheduledAt).toLocaleString()}</p>
+        ${briefDocUrl ? `<p><strong><a href="${briefDocUrl}">Open Google Doc Brief →</a></strong></p>` : ""}
+        <hr/>
         <p><strong>Fit score:</strong> ${fitScore ?? "N/A"}/10 — ${fitReasoning ?? ""}</p>
         <p><strong>Likely objection:</strong> ${likelyObjection ?? "N/A"}</p>
         <p><strong>Meeting angle:</strong> ${meetingAngle ?? "N/A"}</p>
-        ${briefDocUrl ? `<p><a href="${briefDocUrl}">Open Meeting Brief →</a></p>` : ""}
         ${curatedQHtml ? `<hr/><h3>Curated diagnostic questions</h3>${curatedQHtml}` : ""}
       `,
     });
