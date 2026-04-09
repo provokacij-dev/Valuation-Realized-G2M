@@ -1,0 +1,20 @@
+# dependencies
+node_modules/
+
+# next.js
+.next/
+out/
+
+# env files — never commit secrets
+.env
+.env.local
+.env*.local
+
+# local data files (migrated to Supabase — keep as local backups only)
+queue.json
+drafts.json
+skills.json
+
+# misc
+.DS_Store
+*.log
