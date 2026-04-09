@@ -69,11 +69,14 @@ Keep the research section concise (under 300 words). The JSON must be valid and 
 export async function POST(request: NextRequest) {
   // Must use text() to preserve raw body for HMAC verification
   const rawBody = await request.text();
-  const signatureHeader = request.headers.get("Calendly-Webhook-Signature");
-  const secret = process.env.CALENDLY_WEBHOOK_SECRET ?? "";
+  const secret = process.env.CALENDLY_WEBHOOK_SECRET;
 
-  if (!verifyCalendlySignature(rawBody, signatureHeader, secret)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Only verify if a signing secret is configured (paid Calendly plan feature)
+  if (secret) {
+    const signatureHeader = request.headers.get("Calendly-Webhook-Signature");
+    if (!verifyCalendlySignature(rawBody, signatureHeader, secret)) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
   }
 
   let payload: {
