@@ -113,6 +113,7 @@ export async function POST(request: NextRequest) {
         name?: string;
         email?: string;
         text_reminder_number?: string;
+        timezone?: string;
         questions_and_answers?: { question: string; answer: string }[];
       };
     };
@@ -135,6 +136,7 @@ export async function POST(request: NextRequest) {
   const email = (invitee?.email ?? "").toLowerCase().trim();
   const scheduledAt = event?.start_time ?? new Date().toISOString();
   const phone = invitee?.text_reminder_number ?? null;
+  const timezone = invitee?.timezone ?? "UTC";
   const questionsAndAnswers = invitee?.questions_and_answers ?? [];
 
   if (!email) {
@@ -161,7 +163,7 @@ export async function POST(request: NextRequest) {
   const engagementId = inserted.id;
 
   // Async: Claude research + Google Doc + Brevo notify (errors don't fail webhook)
-  void runPostBookingTasks(engagementId, name, email, scheduledAt, phone, questionsAndAnswers);
+  void runPostBookingTasks(engagementId, name, email, scheduledAt, phone, timezone, questionsAndAnswers);
 
   return NextResponse.json({ received: true });
 }
@@ -172,6 +174,7 @@ async function runPostBookingTasks(
   email: string,
   scheduledAt: string,
   phone: string | null,
+  timezone: string,
   questionsAndAnswers: { question: string; answer: string }[]
 ) {
   let research: string | null = null;
@@ -304,7 +307,12 @@ async function runPostBookingTasks(
       .replace(/[-_]/g, " ")
       .replace(/\b\w/g, (c) => c.toUpperCase());
 
-    const dateStr = new Date(scheduledAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    const meetingDate = new Date(scheduledAt);
+    const dateStr = meetingDate.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: timezone });
+    const timeStr = meetingDate.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: timezone });
+    const tzAbbr = new Intl.DateTimeFormat("en", { timeZone: timezone, timeZoneName: "short" })
+      .formatToParts(meetingDate)
+      .find((p) => p.type === "timeZoneName")?.value ?? timezone;
 
     const curatedQHtml = curatedQuestions
       ? Object.entries(curatedQuestions)
@@ -316,7 +324,7 @@ async function runPostBookingTasks(
 
     await sendTransactionalEmail({
       to: vaigaEmail,
-      subject: `Sales brief - ${name}, ${companyName}, ${dateStr}`,
+      subject: `Sales brief - ${name}, ${companyName}, ${dateStr}, ${timeStr} ${tzAbbr}`,
       htmlContent: `
         <h2>Sales Brief: ${name}, ${companyName}</h2>
         <p><strong>Email:</strong> ${email}${phone ? ` &nbsp;·&nbsp; <strong>Phone:</strong> ${phone}` : ""}</p>

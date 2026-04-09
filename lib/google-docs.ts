@@ -3,7 +3,7 @@ import { getGoogleAuth } from "./google-auth";
 
 const DOCS_SCOPES = [
   "https://www.googleapis.com/auth/documents",
-  "https://www.googleapis.com/auth/drive.file",
+  "https://www.googleapis.com/auth/drive",
 ];
 
 function getAuth() {
