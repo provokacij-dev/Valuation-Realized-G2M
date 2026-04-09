@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { getAnthropicClient } from "@/lib/anthropic";
 import { createBriefDoc } from "@/lib/google-docs";
 import { sendTransactionalEmail } from "@/lib/brevo";
+import { formatQuestionBankForPrompt } from "@/lib/question-bank";
 
 // ── Signature verification ───────────────────────────────────────────────────
 
@@ -57,12 +58,23 @@ Invitee: ${name} (${email})${phone ? `\nPhone: ${phone}` : ""}
 Company domain: ${domain}
 Meeting time: ${scheduledAt}${qaSection}
 
+## TASK 1 — Research
 Research this person and their company. Provide:
 1. 3-5 bullet points of key background (company stage, size, industry, any public signals)
 2. Likely deal readiness / exit signals
 3. Potential objections or sensitivities
 
-Then output a JSON block on its own line:
+## TASK 2 — Curate diagnostic questions
+Below is the full question bank used in the discovery call, split into 6 domains. For each domain:
+- Select the 4-6 questions MOST relevant to this specific invitee's business
+- Add 1-2 sector-specific questions if the invitee's industry warrants it (e.g. for a smart home installer: "Do you install and resell, or do you R&D and manufacture?"; for a SaaS company: "What is your ARR and MRR split?")
+- Omit questions that are clearly not applicable (e.g. skip tech stack questions for a pure services business)
+
+Output the curated questions as a JSON block on its own line after the research, using this exact format:
+{"curated_questions":{"leadership":["q1","q2",...],"commercial":["q1","q2",...],"financial":["q1","q2",...],"operations":["q1","q2",...],"legal":["q1","q2",...],"technology":["q1","q2",...]}}
+
+## TASK 3 — Scoring
+Then output a second JSON block on its own line:
 {"fit_score":X,"fit_reasoning":"...","likely_objection":"...","meeting_angle":"..."}
 
 Where:
@@ -71,7 +83,11 @@ Where:
 - likely_objection: the most likely pushback in the first meeting
 - meeting_angle: recommended opening angle for Vaiga
 
-Keep the research section concise (under 300 words). The JSON must be valid and on its own line.`;
+Keep the research section concise (under 300 words). Both JSON blocks must be valid and each on its own line.
+
+## FULL QUESTION BANK
+
+${formatQuestionBankForPrompt()}`;
 }
 
 // ── Route handler ────────────────────────────────────────────────────────────
@@ -165,23 +181,33 @@ async function runPostBookingTasks(
   let meetingAngle: string | null = null;
   let briefDocUrl: string | null = null;
   let briefDocId: string | null = null;
+  let curatedQuestions: Record<string, string[]> | null = null;
 
-  // 1. Claude research
+  // 1. Claude research + question curation
   try {
     const client = getAnthropicClient();
     const res = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 1024,
+      max_tokens: 2048,
       messages: [{ role: "user", content: buildResearchPrompt(name, email, scheduledAt, phone, questionsAndAnswers) }],
     });
 
     const text = res.content[0].type === "text" ? res.content[0].text : "";
 
-    // Extract JSON block from last line or inline
-    const jsonMatch = text.match(/\{[^}]*"fit_score"[^}]*\}/);
-    if (jsonMatch) {
+    // Extract curated questions JSON
+    const curatedMatch = text.match(/\{"curated_questions":\{[\s\S]*?\}\}/);
+    if (curatedMatch) {
       try {
-        const parsed = JSON.parse(jsonMatch[0]);
+        const parsed = JSON.parse(curatedMatch[0]);
+        curatedQuestions = parsed.curated_questions ?? null;
+      } catch {}
+    }
+
+    // Extract scoring JSON
+    const scoringMatch = text.match(/\{"fit_score"[\s\S]*?\}/);
+    if (scoringMatch) {
+      try {
+        const parsed = JSON.parse(scoringMatch[0]);
         fitScore = typeof parsed.fit_score === "number" ? parsed.fit_score : null;
         fitReasoning = parsed.fit_reasoning ?? null;
         likelyObjection = parsed.likely_objection ?? null;
@@ -189,8 +215,11 @@ async function runPostBookingTasks(
       } catch {}
     }
 
-    // Research is the text minus the JSON block
-    research = text.replace(/\{[^}]*"fit_score"[^}]*\}/, "").trim();
+    // Research is the text minus both JSON blocks
+    research = text
+      .replace(/\{"curated_questions":\{[\s\S]*?\}\}/, "")
+      .replace(/\{"fit_score"[\s\S]*?\}/, "")
+      .trim();
   } catch (err) {
     console.error("Claude research error (non-fatal):", err);
   }
@@ -204,6 +233,24 @@ async function runPostBookingTasks(
           ...questionsAndAnswers.map((qa) => `${qa.question}: ${qa.answer}`),
         ]
       : [];
+
+    const domainLabels: Record<string, string> = {
+      leadership: "Leadership & People",
+      commercial: "Commercial",
+      financial: "Financial",
+      operations: "Operations",
+      legal: "Legal",
+      technology: "Technology & Data",
+    };
+
+    const curatedQLines: string[] = [];
+    if (curatedQuestions) {
+      curatedQLines.push("", "=== CURATED DIAGNOSTIC QUESTIONS ===");
+      for (const [domain, qs] of Object.entries(curatedQuestions)) {
+        curatedQLines.push(`\n[${domainLabels[domain] ?? domain}]`);
+        (qs as string[]).forEach((q, i) => curatedQLines.push(`${i + 1}. ${q}`));
+      }
+    }
 
     const docContent = [
       `Meeting Brief: ${name}`,
@@ -220,6 +267,7 @@ async function runPostBookingTasks(
       `Reasoning: ${fitReasoning ?? "N/A"}`,
       `Likely Objection: ${likelyObjection ?? "N/A"}`,
       `Meeting Angle: ${meetingAngle ?? "N/A"}`,
+      ...curatedQLines,
     ].filter(Boolean).join("\n");
 
     const url = await createBriefDoc(`Brief: ${name} — ${new Date(scheduledAt).toLocaleDateString()}`, docContent);
@@ -248,15 +296,25 @@ async function runPostBookingTasks(
   // 4. Brevo notification to Vaiga
   const vaigaEmail = process.env.NOTIFICATION_EMAIL ?? "vaiga@valuationrealized.com";
   try {
+    const curatedQHtml = curatedQuestions
+      ? Object.entries(curatedQuestions)
+          .map(([domain, qs]) =>
+            `<h4>${domainLabels[domain] ?? domain}</h4><ol>${(qs as string[]).map((q) => `<li>${q}</li>`).join("")}</ol>`
+          )
+          .join("")
+      : "";
+
     await sendTransactionalEmail({
       to: vaigaEmail,
       subject: `New booking: ${name} — ${new Date(scheduledAt).toLocaleDateString()}`,
       htmlContent: `
         <h2>New Calendly Booking</h2>
-        <p><strong>${name}</strong> (${email}) booked for ${new Date(scheduledAt).toLocaleString()}</p>
-        <p><strong>Fit score:</strong> ${fitScore ?? "N/A"}/10</p>
+        <p><strong>${name}</strong> (${email})${phone ? ` · ${phone}` : ""} — ${new Date(scheduledAt).toLocaleString()}</p>
+        <p><strong>Fit score:</strong> ${fitScore ?? "N/A"}/10 — ${fitReasoning ?? ""}</p>
+        <p><strong>Likely objection:</strong> ${likelyObjection ?? "N/A"}</p>
         <p><strong>Meeting angle:</strong> ${meetingAngle ?? "N/A"}</p>
         ${briefDocUrl ? `<p><a href="${briefDocUrl}">Open Meeting Brief →</a></p>` : ""}
+        ${curatedQHtml ? `<hr/><h3>Curated diagnostic questions</h3>${curatedQHtml}` : ""}
       `,
     });
   } catch (err) {
