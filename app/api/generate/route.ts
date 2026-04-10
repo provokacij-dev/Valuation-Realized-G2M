@@ -151,12 +151,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (jobError || !job) {
-      return NextResponse.json({
-        error: "Failed to create generation job",
-        detail: jobError?.message ?? "no job returned",
-        code: jobError?.code,
-        hint: jobError?.hint,
-      }, { status: 500 });
+      throw new Error(`Failed to create generation job: ${jobError?.message ?? "unknown"}`);
     }
 
     // Run generation in background — Vercel keeps the lambda alive
