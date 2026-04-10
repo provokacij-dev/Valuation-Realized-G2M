@@ -31,7 +31,7 @@ export default function DashboardPage() {
     setError(null);
     try {
       const [summaryRes, leadsRes, engagementsRes, queueRes] = await Promise.allSettled([
-        fetch("/api/sheets/summary").then((r) => r.json()),
+        fetch("/api/ad-performance").then((r) => r.json()),
         fetch("/api/leads").then((r) => r.json()),
         fetch("/api/engagements").then((r) => r.json()),
         fetch("/api/queue?fields=list").then((r) => r.json()),
@@ -40,7 +40,7 @@ export default function DashboardPage() {
       if (summaryRes.status === "fulfilled") {
         const data = summaryRes.value;
         if (data.error) throw new Error(data.error);
-        setAds(data);
+        setAds(Array.isArray(data) ? data : []);
       }
 
       setPipeline({
@@ -271,7 +271,7 @@ export default function DashboardPage() {
         <div className="flex flex-col items-center justify-center py-24 text-gray-400">
           <p className="text-lg font-medium">No ad data yet</p>
           <p className="text-sm mt-1 text-center max-w-xs">
-            Set your <code className="bg-gray-100 px-1 rounded text-xs">GOOGLE_SHEETS_ID</code> env var and populate the Summary sheet, then click &ldquo;Refresh data&rdquo;.
+            Click &ldquo;Refresh data&rdquo; to pull your Meta ad stats via Make, or set up your Make scenario first.
           </p>
         </div>
       )}

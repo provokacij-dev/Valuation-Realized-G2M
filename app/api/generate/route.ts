@@ -6,68 +6,6 @@ import { getSheetData } from "@/lib/sheets";
 import { supabase } from "@/lib/supabase";
 import type { AdSummary, Rule, Skill, Brief, GeneratedAd, SkillUpdateProposal } from "@/types";
 
-function parseSheetSummary(rows: string[][]): AdSummary[] {
-  if (rows.length < 2) return [];
-  // Skip header rows (handles single or double header row with section labels)
-  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-  const KEYWORDS = ["impressions", "spend", "ctr", "clicks", "emails", "revenue", "deals"];
-  let headerIdx = 0;
-  for (let i = 0; i < Math.min(rows.length, 4); i++) {
-    const flat = rows[i].map(norm).join(" ");
-    if (KEYWORDS.filter((k) => flat.includes(k)).length >= 2) { headerIdx = i; break; }
-  }
-  const headers = rows[headerIdx];
-  const colMap: Record<string, number> = {};
-  headers.forEach((h, i) => { if (h) colMap[norm(h)] = i; });
-  const dataRows = rows.slice(headerIdx + 1);
-  const c = (row: string[], ...keys: string[]) => { for (const k of keys) { const idx = colMap[norm(k)]; if (idx !== undefined && row[idx]) return row[idx]; } return ""; };
-  const n = (row: string[], ...keys: string[]) => parseFloat(c(row, ...keys)) || 0;
-  return dataRows.filter((row) => row.some((r) => r.trim())).map((row) => {
-    const emails_captured = n(row, "emails captured", "emails", "leads");
-    const calls_booked    = n(row, "calls booked", "bookings");
-    const cost_per_lead   = n(row, "cost per lead", "cpl");
-    const show_up_rate    = n(row, "show up rate", "show-up rate");
-    return {
-      ad_id: c(row, "ad id", "ad_id") || c(row, "ad name", "name"),
-      ad_name: c(row, "ad name", "name", "ad"),
-      campaign_name: c(row, "campaign name", "campaign"),
-      adset_name: c(row, "adset name", "ad set", "adset"),
-      period: c(row, "date", "period"),
-      status: (c(row, "status") || "active") as AdSummary["status"],
-      total_spend: n(row, "ad spend", "spend"),
-      impressions: n(row, "impressions"),
-      clicks: n(row, "clicks"),
-      avg_ctr: n(row, "ctr"),
-      avg_cpc: n(row, "cpc"),
-      avg_cpm: n(row, "cpm"),
-      frequency: n(row, "frequency"),
-      cta_video_clicks: n(row, "cta or video clicks", "cta clicks"),
-      emails_captured,
-      click_email_rate: n(row, "click email rate"),
-      cost_per_lead,
-      book_call_clicked: n(row, "book call clicked"),
-      calls_booked,
-      no_shows: n(row, "no shows", "no-shows"),
-      show_ups: n(row, "show ups", "show-ups"),
-      show_up_rate,
-      email_call_rate: n(row, "email call rate"),
-      cost_per_booked_call: n(row, "cost per booked call"),
-      cost_per_actual_call: n(row, "cost per actual call"),
-      proposals_sent: n(row, "proposals sent"),
-      deals_closed: n(row, "deals closed", "deals"),
-      revenue: n(row, "revenue"),
-      cost_per_closed_deal: n(row, "cost per closed deal"),
-      recommendation: (c(row, "recommendation") || "MAINTAIN") as AdSummary["recommendation"],
-      recommendation_reasoning: c(row, "reasoning", "recommendation reasoning"),
-      alert: c(row, "alert") || undefined,
-      alert_reason: c(row, "alert reason") || undefined,
-      total_leads: emails_captured,
-      avg_cpl: cost_per_lead,
-      total_bookings: calls_booked,
-      booking_rate: show_up_rate,
-    };
-  });
-}
 
 function parseSheetRules(rows: string[][]): Rule[] {
   if (rows.length < 2) return [];
@@ -205,15 +143,53 @@ export async function POST(request: NextRequest) {
 
 async function runGenerationJob(jobId: string, brief: Brief, changeRequest?: string) {
   try {
-    const [summaryRows, rulesRows, localSkillsRes] = await Promise.all([
-      getSheetData("Summary").catch(() => []),
+    const [adPerfRes, rulesRows, localSkillsRes] = await Promise.all([
+      supabase.from("ad_performance").select("*").order("total_spend", { ascending: false }),
       getSheetData("Rules").catch(() => []),
       fetch(`${process.env.NEXT_PUBLIC_BASE_URL || "https://valuation-realized-g2-m.vercel.app"}/api/skills`)
         .then((r) => r.json())
         .catch(() => []),
     ]);
 
-    const summary = parseSheetSummary(summaryRows);
+    const summary: AdSummary[] = (adPerfRes.data ?? []).map((row) => ({
+      ad_id: row.ad_id,
+      ad_name: row.ad_name || row.ad_id,
+      campaign_name: row.campaign_name || "",
+      adset_name: row.adset_name || "",
+      period: row.period_start || "",
+      status: (row.status || "active") as AdSummary["status"],
+      total_spend: row.total_spend ?? 0,
+      impressions: row.impressions ?? 0,
+      clicks: row.clicks ?? 0,
+      avg_ctr: row.avg_ctr ?? 0,
+      avg_cpc: row.avg_cpc ?? 0,
+      avg_cpm: row.avg_cpm ?? 0,
+      frequency: row.frequency ?? 0,
+      cta_video_clicks: row.cta_video_clicks ?? 0,
+      emails_captured: row.emails_captured ?? 0,
+      click_email_rate: row.click_email_rate ?? 0,
+      cost_per_lead: row.cost_per_lead ?? 0,
+      book_call_clicked: row.book_call_clicked ?? 0,
+      calls_booked: row.calls_booked ?? 0,
+      no_shows: row.no_shows ?? 0,
+      show_ups: row.show_ups ?? 0,
+      show_up_rate: row.show_up_rate ?? 0,
+      email_call_rate: row.email_call_rate ?? 0,
+      cost_per_booked_call: row.cost_per_booked_call ?? 0,
+      cost_per_actual_call: row.cost_per_actual_call ?? 0,
+      proposals_sent: row.proposals_sent ?? 0,
+      deals_closed: row.deals_closed ?? 0,
+      revenue: row.revenue ?? 0,
+      cost_per_closed_deal: row.cost_per_closed_deal ?? 0,
+      recommendation: (row.recommendation || "MAINTAIN") as AdSummary["recommendation"],
+      recommendation_reasoning: row.recommendation_reasoning || "",
+      alert: row.alert || undefined,
+      alert_reason: row.alert_reason || undefined,
+      total_leads: row.emails_captured ?? 0,
+      avg_cpl: row.cost_per_lead ?? 0,
+      total_bookings: row.calls_booked ?? 0,
+      booking_rate: row.show_up_rate ?? 0,
+    }));
     const rules = parseSheetRules(rulesRows);
     const skills: Skill[] = Array.isArray(localSkillsRes) && localSkillsRes.length > 0
       ? localSkillsRes.filter((s: Skill) => s.status === "active")
