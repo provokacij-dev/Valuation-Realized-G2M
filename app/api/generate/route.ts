@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import { getAnthropicClient } from "@/lib/anthropic";
 import { buildGenerationPrompt } from "@/lib/prompts";
 import { getSheetData } from "@/lib/sheets";
+import { supabase } from "@/lib/supabase";
 import type { AdSummary, Rule, Skill, Brief, GeneratedAd, SkillUpdateProposal } from "@/types";
 
 function parseSheetSummary(rows: string[][]): AdSummary[] {
@@ -141,18 +143,40 @@ export async function POST(request: NextRequest) {
     const brief: Brief = body.brief;
     const changeRequest: string | undefined = body.changeRequest;
 
-    // Fetch context — local skills.json takes priority; Sheets used for perf data
+    // Create a job record immediately and return the job_id
+    const { data: job, error: jobError } = await supabase
+      .from("generation_jobs")
+      .insert({ status: "pending", brief })
+      .select("id")
+      .single();
+
+    if (jobError || !job) {
+      throw new Error("Failed to create generation job");
+    }
+
+    // Run generation in background — Vercel keeps the lambda alive
+    waitUntil(runGenerationJob(job.id, brief, changeRequest));
+
+    return NextResponse.json({ job_id: job.id });
+  } catch (error) {
+    console.error("Generation error:", error);
+    const message = error instanceof Error ? error.message : "Generation failed — try again";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+async function runGenerationJob(jobId: string, brief: Brief, changeRequest?: string) {
+  try {
     const [summaryRows, rulesRows, localSkillsRes] = await Promise.all([
       getSheetData("Summary").catch(() => []),
       getSheetData("Rules").catch(() => []),
-      fetch(`${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:" + (process.env.PORT || 3002)}/api/skills`)
+      fetch(`${process.env.NEXT_PUBLIC_BASE_URL || "https://valuation-realized-g2-m.vercel.app"}/api/skills`)
         .then((r) => r.json())
         .catch(() => []),
     ]);
 
     const summary = parseSheetSummary(summaryRows);
     const rules = parseSheetRules(rulesRows);
-    // Use local skills if available; fall back to Sheets
     const skills: Skill[] = Array.isArray(localSkillsRes) && localSkillsRes.length > 0
       ? localSkillsRes.filter((s: Skill) => s.status === "active")
       : parseSheetSkills(await getSheetData("Production_Skill").catch(() => []));
@@ -162,7 +186,6 @@ export async function POST(request: NextRequest) {
       : brief;
 
     const prompt = buildGenerationPrompt(skills, summary, rules, effectiveBrief);
-
     const client = getAnthropicClient();
     const response = await client.messages.create({
       model: "claude-sonnet-4-6",
@@ -171,18 +194,10 @@ export async function POST(request: NextRequest) {
     });
 
     const content = response.content[0];
-    if (content.type !== "text") {
-      throw new Error("Unexpected response type from Claude");
-    }
+    if (content.type !== "text") throw new Error("Unexpected response type from Claude");
 
-    let parsed: { ads: Partial<GeneratedAd>[]; skill_updates: SkillUpdateProposal[] };
-    try {
-      // Strip potential markdown code blocks
-      const text = content.text.replace(/^```json\n?|\n?```$/g, "").trim();
-      parsed = JSON.parse(text);
-    } catch {
-      throw new Error("Claude returned invalid JSON — try again");
-    }
+    const text = content.text.replace(/^```json\n?|\n?```$/g, "").trim();
+    const parsed: { ads: Partial<GeneratedAd>[]; skill_updates: SkillUpdateProposal[] } = JSON.parse(text);
 
     const ads: GeneratedAd[] = (parsed.ads || []).map((ad, i) => ({
       id: `ad-${Date.now()}-${i}`,
@@ -198,13 +213,18 @@ export async function POST(request: NextRequest) {
       status: "pending",
     }));
 
-    return NextResponse.json({
+    await supabase.from("generation_jobs").update({
+      status: "complete",
       ads,
       skill_updates: parsed.skill_updates || [],
-    });
-  } catch (error) {
-    console.error("Generation error:", error);
-    const message = error instanceof Error ? error.message : "Generation failed — try again";
-    return NextResponse.json({ error: message }, { status: 500 });
+      updated_at: new Date().toISOString(),
+    }).eq("id", jobId);
+  } catch (err) {
+    console.error("Generation job error:", err);
+    await supabase.from("generation_jobs").update({
+      status: "error",
+      error: err instanceof Error ? err.message : "Generation failed",
+      updated_at: new Date().toISOString(),
+    }).eq("id", jobId);
   }
 }

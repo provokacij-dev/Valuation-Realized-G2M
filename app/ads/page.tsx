@@ -117,6 +117,7 @@ export default function AdsPage() {
     setSkillUpdates([]);
 
     try {
+      // Kick off background job — returns immediately with job_id
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -125,13 +126,33 @@ export default function AdsPage() {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      const generatedAds: GeneratedAd[] = data.ads;
+      const jobId: string = data.job_id;
+
+      // Poll until complete — survives navigation away and phone lock
+      const generatedAds: GeneratedAd[] = await new Promise((resolve, reject) => {
+        const poll = setInterval(async () => {
+          try {
+            const jobRes = await fetch(`/api/generate/job?id=${jobId}`);
+            const job = await jobRes.json();
+            if (job.status === "complete") {
+              clearInterval(poll);
+              resolve(job.ads ?? []);
+              setSkillUpdates(job.skill_updates || []);
+            } else if (job.status === "error") {
+              clearInterval(poll);
+              reject(new Error(job.error || "Generation failed"));
+            }
+          } catch (e) {
+            clearInterval(poll);
+            reject(e);
+          }
+        }, 2000);
+      });
+
       setAds((prev) => {
-        // Approved ads and image-uploaded ads stay; new brief drafts appended after
         const keep = prev.filter((a) => a.status === "approved" || !!a.sourceImageUrl);
         return [...keep, ...generatedAds];
       });
-      setSkillUpdates(data.skill_updates || []);
       setLoading(false);
 
       // Generate SVGs in parallel
