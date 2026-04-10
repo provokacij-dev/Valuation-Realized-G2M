@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import type { AdSummary } from "@/types";
 
 type GroupBy = "none" | "campaign" | "adset";
@@ -220,7 +220,7 @@ export default function AdTable({ ads }: Props) {
 
           <tbody>
             {groups.map(({ label, ads: groupAds }) => (
-              <>
+              <Fragment key={label || "all"}>
                 {/* Group header row */}
                 {groupBy !== "none" && (
                   <tr key={`group-${label}`} className="bg-gray-50 border-t-2 border-gray-200">
@@ -283,7 +283,7 @@ export default function AdTable({ ads }: Props) {
                     </td>
                   </tr>
                 ))}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>
