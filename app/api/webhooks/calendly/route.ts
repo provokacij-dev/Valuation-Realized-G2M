@@ -225,23 +225,25 @@ async function runPostBookingTasks(
 
   const personalEmail = isPersonalEmail(email);
 
-  // 1. Brave Search pre-research (if API key available)
+  // 1. Tavily pre-research (if API key available)
   let searchContext = "";
-  const braveKey = process.env.BRAVE_SEARCH_API_KEY;
-  if (braveKey) {
+  const tavilyKey = process.env.TAVILY_API_KEY;
+  if (tavilyKey) {
     const emailUsername = email.split("@")[0];
-    const queries = [name, emailUsername].filter((q) => q && q !== emailUsername || q === name);
-    for (const q of [...new Set(queries)]) {
+    const queries = [...new Set([name, emailUsername])];
+    for (const q of queries) {
       try {
-        const r = await fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=5`, {
-          headers: { "Accept": "application/json", "X-Subscription-Token": braveKey },
+        const r = await fetch("https://api.tavily.com/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ api_key: tavilyKey, query: q, max_results: 5, search_depth: "basic" }),
         });
         if (r.ok) {
-          const data = await r.json() as { web?: { results?: { title: string; description: string; url: string }[] } };
-          const results = data?.web?.results ?? [];
+          const data = await r.json() as { results?: { title: string; content: string; url: string }[] };
+          const results = data?.results ?? [];
           if (results.length > 0) {
             searchContext += `\nSearch results for "${q}":\n` +
-              results.map((r) => `- ${r.title}: ${r.description} (${r.url})`).join("\n");
+              results.map((r) => `- ${r.title}: ${r.content.slice(0, 200)} (${r.url})`).join("\n");
           }
         }
       } catch {}
@@ -254,40 +256,15 @@ async function runPostBookingTasks(
 
     const prompt = buildResearchPrompt(name, email, scheduledAt, phone, questionsAndAnswers, searchContext);
 
-    // Multi-turn loop: web_search tool stops at "tool_use", need to continue until "end_turn"
-    type Message = { role: "user" | "assistant"; content: string | unknown[] };
-    const messages: Message[] = [{ role: "user", content: prompt }];
-    let finalText = "";
+    // Single call — web_search_20250305 is server-executed by Anthropic, returns end_turn directly
+    const res = await client.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 4096,
+      tools: [{ type: "web_search_20250305" as const, name: "web_search", max_uses: 5 }],
+      messages: [{ role: "user", content: prompt }],
+    });
 
-    for (let turn = 0; turn < 8; turn++) {
-      const res = await client.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 4096,
-        tools: [{ type: "web_search_20250305" as const, name: "web_search", max_uses: 5 }],
-        messages: messages as Parameters<typeof client.messages.create>[0]["messages"],
-      });
-
-      // Collect any text from this turn
-      const turnText = res.content.filter((b) => b.type === "text").map((b) => (b as { type: "text"; text: string }).text).join("\n");
-      if (turnText) finalText += turnText + "\n";
-
-      if (res.stop_reason === "end_turn") break;
-
-      // If tool_use, add assistant turn + empty tool results to continue
-      if (res.stop_reason === "tool_use") {
-        messages.push({ role: "assistant", content: res.content });
-        const toolResults = res.content
-          .filter((b) => b.type === "tool_use")
-          .map((b) => ({ type: "tool_result" as const, tool_use_id: (b as { id: string }).id, content: "" }));
-        if (toolResults.length > 0) {
-          messages.push({ role: "user", content: toolResults });
-        }
-      } else {
-        break;
-      }
-    }
-
-    const text = finalText.trim();
+    const text = res.content.filter((b) => b.type === "text").map((b) => (b as { type: "text"; text: string }).text).join("\n").trim();
 
     // Extract curated questions JSON
     const curatedMatch = text.match(/\{"curated_questions":\{[\s\S]*?\}\}/);
