@@ -60,39 +60,40 @@ function buildResearchPrompt(
   email: string,
   scheduledAt: string,
   phone: string | null,
-  questionsAndAnswers: { question: string; answer: string }[]
+  questionsAndAnswers: { question: string; answer: string }[],
+  searchContext: string = ""
 ): string {
   const domain = email.split("@")[1] ?? "";
+  const emailUsername = email.split("@")[0];
   const qaSection = questionsAndAnswers.length > 0
     ? "\nQualifying answers from booking form:\n" +
       questionsAndAnswers.map((qa) => `- ${qa.question}: ${qa.answer}`).join("\n")
     : "";
+  const searchSection = searchContext
+    ? `\n\n## PRE-FETCHED SEARCH RESULTS (use these as your primary research source)\n${searchContext}`
+    : "";
   return `You are a pre-meeting research assistant for Valuation Realized, an M&A advisory firm specialising in SME founder exits.
 
 Invitee: ${name} (${email})${phone ? `\nPhone: ${phone}` : ""}
+Email username: ${emailUsername}
 Company domain: ${domain}
-Meeting time: ${scheduledAt}${qaSection}
+Meeting time: ${scheduledAt}${qaSection}${searchSection}
 
 ## TASK 1 — Identity verification & research
 
-**Step 1 — Search for the person.** Use ALL of the following search queries (the email username often contains the person's name or nickname):
-- Full name: "${name}"
-- Email username as a search term: "${email.split("@")[0]}"${phone ? `\n- Phone number: "${phone}"` : ""}
-- Name + LinkedIn, Name + company, Name + UAE/Dubai/region if applicable
+${searchContext ? `Pre-fetched search results are provided above. Use them as your PRIMARY source. If they clearly identify the person and company, do not search further — just analyse what's there.` : `Use web_search to search for: "${name}", "${emailUsername}"${phone ? `, "${phone}"` : ""}. The email username often IS the person's name (e.g. "maco.moumen" → person is "Maco Moumen", company is "MACO"). Search before concluding anything.`}
 
-Search thoroughly before concluding anything. Many legitimate founders use Gmail. The email prefix often reveals the real name (e.g. "maco.moumen" → search "Maco Moumen").
-
-**Step 2 — Research findings.** Based on what you find, provide:
-1. 3-5 bullet points of key background (company, stage, size, industry, any public signals — LinkedIn, website, news, etc.)
-2. Likely deal readiness / exit signals from their answers and background
+**Research findings** — based on the search results or web search above:
+1. 3-5 bullet points of key background (company name, stage, size, industry, any LinkedIn/website/news found)
+2. Likely deal readiness / exit signals
 3. Potential objections or sensitivities
 
-**Step 3 — Legitimacy assessment.** After searching, assess identity confidence:
-- HIGH: Found LinkedIn, company website, news, or other verifiable public presence
-- MEDIUM: Found partial signals (social media, directory listings, phone lookup, regional business presence)
-- LOW: Genuinely no findable information after searching name, email username, and phone
+**Identity confidence:**
+- HIGH: Found LinkedIn, company website, news, or other verifiable presence
+- MEDIUM: Found partial signals (social media, directories, phone lookup)
+- LOW: Genuinely nothing found after searching name, email username, AND phone
 
-Do NOT default to LOW just because the email is Gmail. Gmail is common among legitimate founders in emerging markets (UAE, KSA, Africa, etc.).
+Do NOT default to LOW just because the email is Gmail. Gmail is common among legitimate founders in emerging markets (UAE, KSA, Africa, Egypt, etc.).
 
 ## TASK 2 — Curate diagnostic questions
 Below is the full question bank used in the discovery call, split into 6 domains. For each domain:
@@ -224,17 +225,69 @@ async function runPostBookingTasks(
 
   const personalEmail = isPersonalEmail(email);
 
-  // 1. Claude research + question curation
+  // 1. Brave Search pre-research (if API key available)
+  let searchContext = "";
+  const braveKey = process.env.BRAVE_SEARCH_API_KEY;
+  if (braveKey) {
+    const emailUsername = email.split("@")[0];
+    const queries = [name, emailUsername].filter((q) => q && q !== emailUsername || q === name);
+    for (const q of [...new Set(queries)]) {
+      try {
+        const r = await fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=5`, {
+          headers: { "Accept": "application/json", "X-Subscription-Token": braveKey },
+        });
+        if (r.ok) {
+          const data = await r.json() as { web?: { results?: { title: string; description: string; url: string }[] } };
+          const results = data?.web?.results ?? [];
+          if (results.length > 0) {
+            searchContext += `\nSearch results for "${q}":\n` +
+              results.map((r) => `- ${r.title}: ${r.description} (${r.url})`).join("\n");
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // 2. Claude research + question curation
   try {
     const client = getAnthropicClient();
-    const res = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 4096,
-      tools: [{ type: "web_search_20250305" as const, name: "web_search", max_uses: 5 }],
-      messages: [{ role: "user", content: buildResearchPrompt(name, email, scheduledAt, phone, questionsAndAnswers) }],
-    });
 
-    const text = res.content.filter((b) => b.type === "text").map((b) => (b as { type: "text"; text: string }).text).join("\n");
+    const prompt = buildResearchPrompt(name, email, scheduledAt, phone, questionsAndAnswers, searchContext);
+
+    // Multi-turn loop: web_search tool stops at "tool_use", need to continue until "end_turn"
+    type Message = { role: "user" | "assistant"; content: string | unknown[] };
+    const messages: Message[] = [{ role: "user", content: prompt }];
+    let finalText = "";
+
+    for (let turn = 0; turn < 8; turn++) {
+      const res = await client.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 4096,
+        tools: [{ type: "web_search_20250305" as const, name: "web_search", max_uses: 5 }],
+        messages: messages as Parameters<typeof client.messages.create>[0]["messages"],
+      });
+
+      // Collect any text from this turn
+      const turnText = res.content.filter((b) => b.type === "text").map((b) => (b as { type: "text"; text: string }).text).join("\n");
+      if (turnText) finalText += turnText + "\n";
+
+      if (res.stop_reason === "end_turn") break;
+
+      // If tool_use, add assistant turn + empty tool results to continue
+      if (res.stop_reason === "tool_use") {
+        messages.push({ role: "assistant", content: res.content });
+        const toolResults = res.content
+          .filter((b) => b.type === "tool_use")
+          .map((b) => ({ type: "tool_result" as const, tool_use_id: (b as { id: string }).id, content: "" }));
+        if (toolResults.length > 0) {
+          messages.push({ role: "user", content: toolResults });
+        }
+      } else {
+        break;
+      }
+    }
+
+    const text = finalText.trim();
 
     // Extract curated questions JSON
     const curatedMatch = text.match(/\{"curated_questions":\{[\s\S]*?\}\}/);
