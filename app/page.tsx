@@ -32,12 +32,12 @@ export default function DashboardPage() {
   const [dateFrom, setDateFrom] = useState(daysAgo(30));
   const [dateTo, setDateTo] = useState(today());
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (from = dateFrom, to = dateTo) => {
     setLoading(true);
     setError(null);
     try {
       const [summaryRes, leadsRes, engagementsRes, queueRes] = await Promise.allSettled([
-        fetch("/api/ad-performance").then((r) => r.json()),
+        fetch(`/api/ad-performance?date_from=${from}&date_to=${to}`).then((r) => r.json()),
         fetch("/api/leads").then((r) => r.json()),
         fetch("/api/engagements").then((r) => r.json()),
         fetch("/api/queue?fields=list").then((r) => r.json()),
@@ -133,7 +133,7 @@ export default function DashboardPage() {
                 type="date"
                 value={dateFrom}
                 max={dateTo}
-                onChange={(e) => setDateFrom(e.target.value)}
+                onChange={(e) => { setDateFrom(e.target.value); loadData(e.target.value, dateTo); }}
                 className="text-sm text-gray-700 outline-none bg-transparent w-32"
               />
               <span className="text-gray-300">→</span>
@@ -142,7 +142,7 @@ export default function DashboardPage() {
                 value={dateTo}
                 min={dateFrom}
                 max={today()}
-                onChange={(e) => setDateTo(e.target.value)}
+                onChange={(e) => { setDateTo(e.target.value); loadData(dateFrom, e.target.value); }}
                 className="text-sm text-gray-700 outline-none bg-transparent w-32"
               />
             </div>

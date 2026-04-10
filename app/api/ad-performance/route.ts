@@ -3,12 +3,21 @@ import { supabase } from "@/lib/supabase";
 import type { AdSummary } from "@/types";
 
 // ── GET: dashboard reads ad performance from Supabase ─────────────────────────
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const { data, error } = await supabase
+    const { searchParams } = new URL(request.url);
+    const dateFrom = searchParams.get("date_from");
+    const dateTo = searchParams.get("date_to");
+
+    let query = supabase
       .from("ad_performance")
       .select("*")
       .order("total_spend", { ascending: false });
+
+    if (dateFrom) query = query.gte("period_start", dateFrom);
+    if (dateTo) query = query.lte("period_start", dateTo);
+
+    const { data, error } = await query;
 
     if (error) throw error;
 
