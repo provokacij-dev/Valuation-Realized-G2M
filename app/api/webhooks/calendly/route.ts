@@ -39,6 +39,20 @@ function verifyCalendlySignature(
   }
 }
 
+// ── Personal email detection ─────────────────────────────────────────────────
+
+const PERSONAL_EMAIL_DOMAINS = new Set([
+  "gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.uk", "yahoo.fr",
+  "hotmail.com", "hotmail.co.uk", "outlook.com", "live.com", "msn.com",
+  "icloud.com", "me.com", "mac.com", "protonmail.com", "proton.me",
+  "aol.com", "mail.com", "gmx.com", "yandex.com", "yandex.ru",
+]);
+
+function isPersonalEmail(email: string): boolean {
+  const domain = email.split("@")[1]?.toLowerCase() ?? "";
+  return PERSONAL_EMAIL_DOMAINS.has(domain);
+}
+
 // ── Research prompt ─────────────────────────────────────────────────────────
 
 function buildResearchPrompt(
@@ -76,13 +90,14 @@ Output the curated questions as a JSON block on its own line after the research,
 
 ## TASK 3 — Scoring
 Then output a second JSON block on its own line:
-{"fit_score":X,"fit_reasoning":"...","likely_objection":"...","meeting_angle":"..."}
+{"fit_score":X,"fit_reasoning":"...","likely_objection":"...","meeting_angle":"...","public_info_found":true/false}
 
 Where:
 - fit_score: 1-10 alignment with VR's ICP (M&A-ready SME founder, deal size $2M-$50M)
 - fit_reasoning: one sentence on score rationale
 - likely_objection: the most likely pushback in the first meeting
 - meeting_angle: recommended opening angle for Vaiga
+- public_info_found: true if you found any verifiable public information about this person or their company (LinkedIn, company website, news, etc.); false if the person and company are completely ungoogleable
 
 Keep the research section concise (under 300 words). Both JSON blocks must be valid and each on its own line.
 
@@ -183,9 +198,12 @@ async function runPostBookingTasks(
   let fitReasoning: string | null = null;
   let likelyObjection: string | null = null;
   let meetingAngle: string | null = null;
+  let publicInfoFound: boolean = true;
   let briefDocUrl: string | null = null;
   let briefDocId: string | null = null;
   let curatedQuestions: Record<string, string[]> | null = null;
+
+  const personalEmail = isPersonalEmail(email);
 
   // 1. Claude research + question curation
   try {
@@ -216,6 +234,7 @@ async function runPostBookingTasks(
         fitReasoning = parsed.fit_reasoning ?? null;
         likelyObjection = parsed.likely_objection ?? null;
         meetingAngle = parsed.meeting_angle ?? null;
+        publicInfoFound = parsed.public_info_found !== false;
       } catch {}
     }
 
@@ -323,10 +342,26 @@ async function runPostBookingTasks(
           .join("")
       : "";
 
+    const isSuspicious = personalEmail && !publicInfoFound;
+    const suspiciousFlags: string[] = [];
+    if (personalEmail) suspiciousFlags.push("Personal email address (not a business domain)");
+    if (!publicInfoFound) suspiciousFlags.push("No verifiable public information found on this person or company");
+
+    const suspiciousBanner = isSuspicious ? `
+      <div style="background:#fff3cd;border:2px solid #e6a817;border-radius:6px;padding:16px 20px;margin-bottom:20px;">
+        <p style="margin:0 0 8px;font-size:16px;font-weight:bold;color:#7d4e00;">⚠️ POTENTIAL ROGUE / FAKE BOOKING</p>
+        <p style="margin:0 0 6px;color:#5a3a00;">Two risk signals detected — verify before preparing for this call:</p>
+        <ul style="margin:0;padding-left:20px;color:#5a3a00;">
+          ${suspiciousFlags.map((f) => `<li>${f}</li>`).join("")}
+        </ul>
+        <p style="margin:8px 0 0;color:#5a3a00;font-size:13px;">Recommend: WhatsApp the number before the call to confirm identity and company.</p>
+      </div>` : "";
+
     await sendTransactionalEmail({
       to: vaigaEmail,
-      subject: `Sales brief - ${name}, ${companyName}, ${dateStr}, ${timeStr} ${tzAbbr}`,
+      subject: `${isSuspicious ? "⚠️ " : ""}Sales brief - ${name}, ${companyName}, ${dateStr}, ${timeStr} ${tzAbbr}`,
       htmlContent: `
+        ${suspiciousBanner}
         <h2>Sales Brief: ${name}, ${companyName}</h2>
         <p><strong>Email:</strong> ${email}${phone ? ` &nbsp;·&nbsp; <strong>Phone:</strong> ${phone}` : ""}</p>
         <p><strong>Meeting:</strong> ${new Date(scheduledAt).toLocaleString()}</p>
