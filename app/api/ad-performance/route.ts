@@ -14,8 +14,8 @@ export async function GET(request: NextRequest) {
       .select("*")
       .order("total_spend", { ascending: false });
 
-    if (dateFrom) query = query.gte("period_start", dateFrom);
-    if (dateTo) query = query.lte("period_start", dateTo);
+    if (dateFrom) query = query.or(`period_start.gte.${dateFrom},period_start.is.null`);
+    if (dateTo) query = query.or(`period_end.lte.${dateTo},period_end.is.null`);
 
     const { data, error } = await query;
 
