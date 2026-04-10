@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import { createHmac, timingSafeEqual } from "crypto";
 import { supabase } from "@/lib/supabase";
 import { getAnthropicClient } from "@/lib/anthropic";
@@ -162,8 +163,8 @@ export async function POST(request: NextRequest) {
 
   const engagementId = inserted.id;
 
-  // Async: Claude research + Google Doc + Brevo notify (errors don't fail webhook)
-  void runPostBookingTasks(engagementId, name, email, scheduledAt, phone, timezone, questionsAndAnswers);
+  // Keep lambda alive until background tasks complete (waitUntil prevents Vercel from killing the function)
+  waitUntil(runPostBookingTasks(engagementId, name, email, scheduledAt, phone, timezone, questionsAndAnswers));
 
   return NextResponse.json({ received: true });
 }
