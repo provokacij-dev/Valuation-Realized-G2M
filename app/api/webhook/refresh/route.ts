@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   const webhookUrl = process.env.MAKE_REFRESH_WEBHOOK_URL;
   if (!webhookUrl) {
     return NextResponse.json(
@@ -9,11 +9,26 @@ export async function POST() {
     );
   }
 
+  let date_from: string | undefined;
+  let date_to: string | undefined;
+  try {
+    const body = await request.json();
+    date_from = body.date_from;
+    date_to = body.date_to;
+  } catch {
+    // no body — use Make's default date range
+  }
+
   try {
     const response = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ trigger: "refresh", timestamp: new Date().toISOString() }),
+      body: JSON.stringify({
+        trigger: "refresh",
+        timestamp: new Date().toISOString(),
+        ...(date_from && { date_from }),
+        ...(date_to && { date_to }),
+      }),
       signal: AbortSignal.timeout(30000),
     });
 
