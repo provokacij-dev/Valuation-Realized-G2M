@@ -107,8 +107,8 @@ export async function POST(request: NextRequest) {
       campaign_name: r.campaign_name ?? null,
       adset_id: r.adset_id ?? null,
       adset_name: r.adset_name ?? null,
-      period_start: r.period_start ?? null,
-      period_end: r.period_end ?? null,
+      period_start: r.period_start && String(r.period_start).trim() ? r.period_start : null,
+      period_end: r.period_end && String(r.period_end).trim() ? r.period_end : null,
       status: r.status ?? "active",
 
       total_spend: num(r.total_spend ?? r.spend),
