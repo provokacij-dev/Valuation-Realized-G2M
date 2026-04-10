@@ -73,11 +73,26 @@ Invitee: ${name} (${email})${phone ? `\nPhone: ${phone}` : ""}
 Company domain: ${domain}
 Meeting time: ${scheduledAt}${qaSection}
 
-## TASK 1 — Research
-Research this person and their company. Provide:
-1. 3-5 bullet points of key background (company stage, size, industry, any public signals)
-2. Likely deal readiness / exit signals
+## TASK 1 — Identity verification & research
+
+**Step 1 — Search for the person.** Use ALL of the following search queries (the email username often contains the person's name or nickname):
+- Full name: "${name}"
+- Email username as a search term: "${email.split("@")[0]}"${phone ? `\n- Phone number: "${phone}"` : ""}
+- Name + LinkedIn, Name + company, Name + UAE/Dubai/region if applicable
+
+Search thoroughly before concluding anything. Many legitimate founders use Gmail. The email prefix often reveals the real name (e.g. "maco.moumen" → search "Maco Moumen").
+
+**Step 2 — Research findings.** Based on what you find, provide:
+1. 3-5 bullet points of key background (company, stage, size, industry, any public signals — LinkedIn, website, news, etc.)
+2. Likely deal readiness / exit signals from their answers and background
 3. Potential objections or sensitivities
+
+**Step 3 — Legitimacy assessment.** After searching, assess identity confidence:
+- HIGH: Found LinkedIn, company website, news, or other verifiable public presence
+- MEDIUM: Found partial signals (social media, directory listings, phone lookup, regional business presence)
+- LOW: Genuinely no findable information after searching name, email username, and phone
+
+Do NOT default to LOW just because the email is Gmail. Gmail is common among legitimate founders in emerging markets (UAE, KSA, Africa, etc.).
 
 ## TASK 2 — Curate diagnostic questions
 Below is the full question bank used in the discovery call, split into 6 domains. For each domain:
@@ -90,14 +105,16 @@ Output the curated questions as a JSON block on its own line after the research,
 
 ## TASK 3 — Scoring
 Then output a second JSON block on its own line:
-{"fit_score":X,"fit_reasoning":"...","likely_objection":"...","meeting_angle":"...","public_info_found":true/false}
+{"fit_score":X,"fit_reasoning":"...","likely_objection":"...","meeting_angle":"...","public_info_found":true/false,"identity_confidence":"HIGH/MEDIUM/LOW","identity_notes":"..."}
 
 Where:
 - fit_score: 1-10 alignment with VR's ICP (M&A-ready SME founder, deal size $2M-$50M)
 - fit_reasoning: one sentence on score rationale
 - likely_objection: the most likely pushback in the first meeting
 - meeting_angle: recommended opening angle for Vaiga
-- public_info_found: true if you found any verifiable public information about this person or their company (LinkedIn, company website, news, etc.); false if the person and company are completely ungoogleable
+- public_info_found: true if you found ANY verifiable signal (name match, company, LinkedIn, phone); false only if completely ungoogleable after thorough search
+- identity_confidence: HIGH / MEDIUM / LOW as defined above
+- identity_notes: one sentence summarising what you found (or didn't find) about their identity
 
 Keep the research section concise (under 300 words). Both JSON blocks must be valid and each on its own line.
 
@@ -199,6 +216,8 @@ async function runPostBookingTasks(
   let likelyObjection: string | null = null;
   let meetingAngle: string | null = null;
   let publicInfoFound: boolean = true;
+  let identityConfidence: "HIGH" | "MEDIUM" | "LOW" = "HIGH";
+  let identityNotes: string | null = null;
   let briefDocUrl: string | null = null;
   let briefDocId: string | null = null;
   let curatedQuestions: Record<string, string[]> | null = null;
@@ -209,12 +228,13 @@ async function runPostBookingTasks(
   try {
     const client = getAnthropicClient();
     const res = await client.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 2048,
+      model: "claude-sonnet-4-6",
+      max_tokens: 4096,
+      tools: [{ type: "web_search_20250305" as const, name: "web_search", max_uses: 5 }],
       messages: [{ role: "user", content: buildResearchPrompt(name, email, scheduledAt, phone, questionsAndAnswers) }],
     });
 
-    const text = res.content[0].type === "text" ? res.content[0].text : "";
+    const text = res.content.filter((b) => b.type === "text").map((b) => (b as { type: "text"; text: string }).text).join("\n");
 
     // Extract curated questions JSON
     const curatedMatch = text.match(/\{"curated_questions":\{[\s\S]*?\}\}/);
@@ -235,6 +255,8 @@ async function runPostBookingTasks(
         likelyObjection = parsed.likely_objection ?? null;
         meetingAngle = parsed.meeting_angle ?? null;
         publicInfoFound = parsed.public_info_found !== false;
+        identityConfidence = ["HIGH", "MEDIUM", "LOW"].includes(parsed.identity_confidence) ? parsed.identity_confidence : "HIGH";
+        identityNotes = parsed.identity_notes ?? null;
       } catch {}
     }
 
@@ -342,24 +364,26 @@ async function runPostBookingTasks(
           .join("")
       : "";
 
-    const isSuspicious = personalEmail && !publicInfoFound;
-    const suspiciousFlags: string[] = [];
-    if (personalEmail) suspiciousFlags.push("Personal email address (not a business domain)");
-    if (!publicInfoFound) suspiciousFlags.push("No verifiable public information found on this person or company");
+    // Flag as suspicious only when personal email AND Claude found LOW identity confidence after web search
+    const isSuspicious = personalEmail && identityConfidence === "LOW";
+    // Show a softer notice for MEDIUM confidence with personal email
+    const isMediumRisk = personalEmail && identityConfidence === "MEDIUM";
 
     const suspiciousBanner = isSuspicious ? `
       <div style="background:#fff3cd;border:2px solid #e6a817;border-radius:6px;padding:16px 20px;margin-bottom:20px;">
         <p style="margin:0 0 8px;font-size:16px;font-weight:bold;color:#7d4e00;">⚠️ POTENTIAL ROGUE / FAKE BOOKING</p>
-        <p style="margin:0 0 6px;color:#5a3a00;">Two risk signals detected — verify before preparing for this call:</p>
-        <ul style="margin:0;padding-left:20px;color:#5a3a00;">
-          ${suspiciousFlags.map((f) => `<li>${f}</li>`).join("")}
-        </ul>
+        <p style="margin:0 0 6px;color:#5a3a00;">Personal email + no verifiable public identity found after web search.</p>
+        ${identityNotes ? `<p style="margin:4px 0;color:#5a3a00;font-size:13px;"><em>${identityNotes}</em></p>` : ""}
         <p style="margin:8px 0 0;color:#5a3a00;font-size:13px;">Recommend: WhatsApp the number before the call to confirm identity and company.</p>
+      </div>` : isMediumRisk ? `
+      <div style="background:#e8f4fd;border:2px solid #5b9bd5;border-radius:6px;padding:12px 20px;margin-bottom:20px;">
+        <p style="margin:0 0 4px;font-size:15px;font-weight:bold;color:#1a4a7a;">ℹ️ VERIFY IDENTITY</p>
+        <p style="margin:0;color:#1a3a5c;font-size:13px;">Personal email with partial public presence. ${identityNotes ?? ""} Consider a quick WhatsApp to confirm.</p>
       </div>` : "";
 
     await sendTransactionalEmail({
       to: vaigaEmail,
-      subject: `${isSuspicious ? "⚠️ " : ""}Sales brief - ${name}, ${companyName}, ${dateStr}, ${timeStr} ${tzAbbr}`,
+      subject: `${isSuspicious ? "⚠️ " : isMediumRisk ? "ℹ️ " : ""}Sales brief - ${name}, ${companyName}, ${dateStr}, ${timeStr} ${tzAbbr}`,
       htmlContent: `
         ${suspiciousBanner}
         <h2>Sales Brief: ${name}, ${companyName}</h2>
