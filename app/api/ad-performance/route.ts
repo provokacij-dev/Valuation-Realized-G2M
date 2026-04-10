@@ -149,7 +149,7 @@ export async function POST(request: NextRequest) {
     const { error } = await supabase
       .from("ad_performance")
       .upsert(upsertRows, {
-        onConflict: "ad_id,period_start,period_end",
+        onConflict: "ad_id",
         ignoreDuplicates: false,
       });
 
