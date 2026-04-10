@@ -153,12 +153,15 @@ export async function POST(request: NextRequest) {
         ignoreDuplicates: false,
       });
 
-    if (error) throw error;
+    if (error) {
+      console.error("Supabase upsert error:", error);
+      return NextResponse.json({ error: error.message, details: error }, { status: 500 });
+    }
 
     return NextResponse.json({ success: true, upserted: upsertRows.length });
   } catch (error) {
     console.error("ad-performance POST error:", error);
-    return NextResponse.json({ error: "Failed to save ad performance data" }, { status: 500 });
+    return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }
 
