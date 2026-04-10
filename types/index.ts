@@ -1,20 +1,54 @@
 export interface AdSummary {
+  // Identity
   ad_id: string;
   ad_name: string;
   campaign_name: string;
   adset_name: string;
-  total_spend: number;
-  total_leads: number;
-  avg_cpl: number;
-  avg_ctr: number;
-  total_bookings: number;
-  booking_rate: number;
+  period: string;
+  status: "active" | "paused" | "killed";
+
+  // AD PERFORMANCE
+  total_spend: number;       // Ad Spend (€)
+  impressions: number;
+  clicks: number;
+  avg_ctr: number;           // CTR (%)
+  avg_cpc: number;           // CPC (€)
+  avg_cpm: number;           // CPM (€)
   frequency: number;
+
+  // FUNNEL
+  cta_video_clicks: number;  // CTA or video Clicks
+  emails_captured: number;   // Emails Captured
+  click_email_rate: number;  // Click→Email Rate (%)
+  cost_per_lead: number;     // Cost per Lead (€)
+
+  // CALLS
+  book_call_clicked: number;
+  calls_booked: number;
+  no_shows: number;
+  show_ups: number;
+  show_up_rate: number;           // Show-up Rate (%)
+  email_call_rate: number;        // Email→Call Rate (%)
+  cost_per_booked_call: number;
+  cost_per_actual_call: number;
+
+  // REVENUE
+  proposals_sent: number;
+  deals_closed: number;
+  revenue: number;
+  cost_per_closed_deal: number;
+
+  // Analysis
   recommendation: "SCALE" | "MAINTAIN" | "KILL" | "TEST VARIANT";
   recommendation_reasoning: string;
   alert?: string;
   alert_reason?: string;
-  status: "active" | "paused" | "killed";
+
+  // Legacy aliases (kept for filter-bar / sort compatibility)
+  total_leads: number;       // = emails_captured
+  avg_cpl: number;           // = cost_per_lead
+  total_bookings: number;    // = calls_booked
+  booking_rate: number;      // = show_up_rate
 }
 
 export interface Rule {

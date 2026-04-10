@@ -8,27 +8,65 @@ import type { AdSummary, Rule, Skill, Brief, GeneratedAd, SkillUpdateProposal } 
 
 function parseSheetSummary(rows: string[][]): AdSummary[] {
   if (rows.length < 2) return [];
-  const [, ...dataRows] = rows;
-  return dataRows
-    .filter((row) => row.length > 0 && row[0])
-    .map((row) => ({
-      ad_id: row[0] || "",
-      ad_name: row[1] || "",
-      campaign_name: row[2] || "",
-      adset_name: row[3] || "",
-      total_spend: parseFloat(row[4]) || 0,
-      total_leads: parseInt(row[5]) || 0,
-      avg_cpl: parseFloat(row[6]) || 0,
-      avg_ctr: parseFloat(row[7]) || 0,
-      total_bookings: parseInt(row[8]) || 0,
-      booking_rate: parseFloat(row[9]) || 0,
-      frequency: parseFloat(row[10]) || 0,
-      recommendation: (row[11] as AdSummary["recommendation"]) || "MAINTAIN",
-      recommendation_reasoning: row[12] || "",
-      alert: row[13] || undefined,
-      alert_reason: row[14] || undefined,
-      status: (row[15] as AdSummary["status"]) || "active",
-    }));
+  // Skip header rows (handles single or double header row with section labels)
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const KEYWORDS = ["impressions", "spend", "ctr", "clicks", "emails", "revenue", "deals"];
+  let headerIdx = 0;
+  for (let i = 0; i < Math.min(rows.length, 4); i++) {
+    const flat = rows[i].map(norm).join(" ");
+    if (KEYWORDS.filter((k) => flat.includes(k)).length >= 2) { headerIdx = i; break; }
+  }
+  const headers = rows[headerIdx];
+  const colMap: Record<string, number> = {};
+  headers.forEach((h, i) => { if (h) colMap[norm(h)] = i; });
+  const dataRows = rows.slice(headerIdx + 1);
+  const c = (row: string[], ...keys: string[]) => { for (const k of keys) { const idx = colMap[norm(k)]; if (idx !== undefined && row[idx]) return row[idx]; } return ""; };
+  const n = (row: string[], ...keys: string[]) => parseFloat(c(row, ...keys)) || 0;
+  return dataRows.filter((row) => row.some((r) => r.trim())).map((row) => {
+    const emails_captured = n(row, "emails captured", "emails", "leads");
+    const calls_booked    = n(row, "calls booked", "bookings");
+    const cost_per_lead   = n(row, "cost per lead", "cpl");
+    const show_up_rate    = n(row, "show up rate", "show-up rate");
+    return {
+      ad_id: c(row, "ad id", "ad_id") || c(row, "ad name", "name"),
+      ad_name: c(row, "ad name", "name", "ad"),
+      campaign_name: c(row, "campaign name", "campaign"),
+      adset_name: c(row, "adset name", "ad set", "adset"),
+      period: c(row, "date", "period"),
+      status: (c(row, "status") || "active") as AdSummary["status"],
+      total_spend: n(row, "ad spend", "spend"),
+      impressions: n(row, "impressions"),
+      clicks: n(row, "clicks"),
+      avg_ctr: n(row, "ctr"),
+      avg_cpc: n(row, "cpc"),
+      avg_cpm: n(row, "cpm"),
+      frequency: n(row, "frequency"),
+      cta_video_clicks: n(row, "cta or video clicks", "cta clicks"),
+      emails_captured,
+      click_email_rate: n(row, "click email rate"),
+      cost_per_lead,
+      book_call_clicked: n(row, "book call clicked"),
+      calls_booked,
+      no_shows: n(row, "no shows", "no-shows"),
+      show_ups: n(row, "show ups", "show-ups"),
+      show_up_rate,
+      email_call_rate: n(row, "email call rate"),
+      cost_per_booked_call: n(row, "cost per booked call"),
+      cost_per_actual_call: n(row, "cost per actual call"),
+      proposals_sent: n(row, "proposals sent"),
+      deals_closed: n(row, "deals closed", "deals"),
+      revenue: n(row, "revenue"),
+      cost_per_closed_deal: n(row, "cost per closed deal"),
+      recommendation: (c(row, "recommendation") || "MAINTAIN") as AdSummary["recommendation"],
+      recommendation_reasoning: c(row, "reasoning", "recommendation reasoning"),
+      alert: c(row, "alert") || undefined,
+      alert_reason: c(row, "alert reason") || undefined,
+      total_leads: emails_captured,
+      avg_cpl: cost_per_lead,
+      total_bookings: calls_booked,
+      booking_rate: show_up_rate,
+    };
+  });
 }
 
 function parseSheetRules(rows: string[][]): Rule[] {
