@@ -23,6 +23,7 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
@@ -81,13 +82,14 @@ export default function DashboardPage() {
 
   async function handleAnalysis() {
     setAnalyzing(true);
+    setAnalysisError(null);
     try {
       const res = await fetch("/api/webhook/analysis", { method: "POST" });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       await loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Analysis failed");
+      setAnalysisError(e instanceof Error ? e.message : "Analysis failed");
     } finally {
       setAnalyzing(false);
     }
@@ -118,35 +120,40 @@ export default function DashboardPage() {
           )}
         </div>
 
-        <div className="flex gap-2">
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing || analyzing}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-white border border-gray-200 rounded-lg hover:border-vr-green text-gray-700 hover:text-vr-green disabled:opacity-50"
-          >
-            {refreshing ? (
-              <>
-                <Spinner />
-                Pulling Meta data...
-              </>
-            ) : (
-              "Refresh data"
-            )}
-          </button>
-          <button
-            onClick={handleAnalysis}
-            disabled={refreshing || analyzing}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-vr-green text-white rounded-lg hover:opacity-90 disabled:opacity-50"
-          >
-            {analyzing ? (
-              <>
-                <Spinner light />
-                Running analysis...
-              </>
-            ) : (
-              "Run analysis"
-            )}
-          </button>
+        <div className="flex flex-col items-end gap-1.5">
+          <div className="flex gap-2">
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing || analyzing}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-white border border-gray-200 rounded-lg hover:border-vr-green text-gray-700 hover:text-vr-green disabled:opacity-50"
+            >
+              {refreshing ? (
+                <>
+                  <Spinner />
+                  Pulling Meta data...
+                </>
+              ) : (
+                "Refresh data"
+              )}
+            </button>
+            <button
+              onClick={handleAnalysis}
+              disabled={refreshing || analyzing}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-vr-green text-white rounded-lg hover:opacity-90 disabled:opacity-50"
+            >
+              {analyzing ? (
+                <>
+                  <Spinner light />
+                  Running analysis...
+                </>
+              ) : (
+                "Run analysis"
+              )}
+            </button>
+          </div>
+          {analysisError && (
+            <p className="text-xs text-amber-600">⚠ {analysisError}</p>
+          )}
         </div>
       </div>
 
