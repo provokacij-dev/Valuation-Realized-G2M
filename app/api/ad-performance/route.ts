@@ -99,8 +99,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No ads in payload" }, { status: 400 });
     }
 
+    // Filter out empty bundles (no ad_id = no data from Meta)
+    const validRows = rows.filter((r) => r.ad_id && String(r.ad_id).trim());
+
+    if (validRows.length === 0) {
+      return NextResponse.json({ success: true, upserted: 0, skipped: rows.length });
+    }
+
     // Normalise each row before upsert
-    const upsertRows = rows.map((r) => ({
+    const upsertRows = validRows.map((r) => ({
       ad_id: r.ad_id,
       ad_name: r.ad_name ?? null,
       campaign_id: r.campaign_id ?? null,
