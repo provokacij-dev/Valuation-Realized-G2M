@@ -153,7 +153,16 @@ export async function POST(request: NextRequest) {
   let payload: {
     event: string;
     payload: {
-      event?: { name?: string; start_time?: string };
+      event?: {
+        name?: string;
+        start_time?: string;
+        location?: { type?: string; join_url?: string };
+      };
+      scheduled_event?: {
+        name?: string;
+        start_time?: string;
+        location?: { type?: string; join_url?: string };
+      };
       invitee?: {
         name?: string;
         email?: string;
@@ -176,7 +185,9 @@ export async function POST(request: NextRequest) {
   }
 
   const invitee = payload.payload.invitee;
-  const event = payload.payload.event;
+  // Accept either shape: `payload.event` (our simplified/test shape) or
+  // `payload.scheduled_event` (Calendly v2 webhook shape).
+  const event = payload.payload.event ?? payload.payload.scheduled_event;
   const name = invitee?.name ?? "Unknown";
   const email = (invitee?.email ?? "").toLowerCase().trim();
   const scheduledAt = event?.start_time ?? new Date().toISOString();
@@ -184,8 +195,30 @@ export async function POST(request: NextRequest) {
   const timezone = invitee?.timezone ?? "UTC";
   const questionsAndAnswers = invitee?.questions_and_answers ?? [];
 
+  // Zoom meeting ID from the event location's join URL (e.g.
+  // "https://us06web.zoom.us/j/81191421252?pwd=..." → "81191421252").
+  // Used by the Zoom recording.completed webhook to match back to this
+  // engagement.
+  const joinUrl = event?.location?.join_url ?? null;
+  const zoomMeetingIdMatch = joinUrl?.match(/\/j\/(\d+)/);
+  const zoomMeetingId = zoomMeetingIdMatch ? zoomMeetingIdMatch[1] : null;
+
   if (!email) {
     return NextResponse.json({ error: "Missing invitee email" }, { status: 400 });
+  }
+
+  // Calendly retries on slow responses, producing duplicate engagement rows.
+  // Same (email, scheduled_at) means same booking — short-circuit before spending
+  // Tavily / Claude / Google Docs / Brevo quota on a retry.
+  const { data: existingDup } = await supabase
+    .from("engagements")
+    .select("id")
+    .eq("email", email)
+    .eq("scheduled_at", scheduledAt)
+    .maybeSingle();
+
+  if (existingDup) {
+    return NextResponse.json({ received: true, dedup: true });
   }
 
   // Insert engagement immediately — return 200 fast regardless of downstream failures
@@ -196,6 +229,7 @@ export async function POST(request: NextRequest) {
       email,
       scheduled_at: scheduledAt,
       status: "booked",
+      zoom_meeting_id: zoomMeetingId,
     })
     .select("id")
     .single();

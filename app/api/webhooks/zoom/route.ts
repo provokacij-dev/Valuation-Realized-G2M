@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { waitUntil } from "@vercel/functions";
 import { createHmac, timingSafeEqual } from "crypto";
 import { supabase } from "@/lib/supabase";
+import { runEngagementAnalysis } from "@/lib/engagement-analysis";
 
 // ── Signature verification ───────────────────────────────────────────────────
 
@@ -33,6 +35,7 @@ export async function POST(request: NextRequest) {
     payload: {
       plainToken?: string;
       object?: {
+        id?: string | number;
         host_email?: string;
         participant_email?: string;
         recording_files?: Array<{ file_type: string; download_url: string }>;
@@ -69,19 +72,24 @@ export async function POST(request: NextRequest) {
       (f) => f.file_type === "TRANSCRIPT"
     );
     const transcriptUrl = transcriptFile?.download_url ?? null;
-    // Match by host email — participant email would require deeper payload parsing
+    // Match by Zoom meeting ID — persisted on the engagement at booking time
+    // by the Calendly webhook. host_email is always Vaiga's Zoom account and
+    // is not a reliable match key.
+    const meetingId = obj?.id != null ? String(obj.id) : null;
     const hostEmail = obj?.host_email ?? null;
 
-    if (hostEmail) {
+    if (meetingId) {
       const { data: matches } = await supabase
         .from("engagements")
-        .select("id")
-        .eq("email", hostEmail.toLowerCase())
-        .in("status", ["booked", "completed"])
+        .select("id, zoom_analysis")
+        .eq("zoom_meeting_id", meetingId)
         .order("scheduled_at", { ascending: false })
         .limit(1);
 
       if (matches && matches.length > 0) {
+        const engagementId = matches[0].id;
+        const alreadyAnalysed = matches[0].zoom_analysis != null;
+
         await supabase
           .from("engagements")
           .update({
@@ -89,13 +97,28 @@ export async function POST(request: NextRequest) {
             status: transcriptUrl ? "transcript_pending" : "transcript_failed",
             updated_at: new Date().toISOString(),
           })
-          .eq("id", matches[0].id);
+          .eq("id", engagementId);
+
+        // Auto-trigger analysis in the background — webhook returns 200 fast
+        // while the Claude + Doc append + Brevo email fan out asynchronously.
+        // Skip if this engagement was already analysed (idempotency — Zoom can
+        // re-fire recording.completed, e.g. after file migration between cloud
+        // and local recording storage).
+        if (transcriptUrl && !alreadyAnalysed) {
+          waitUntil(
+            runEngagementAnalysis(engagementId).catch((err) => {
+              console.error("Auto-analysis error (non-fatal):", err);
+            }),
+          );
+        }
       } else {
-        // Unmatched recording — store with email for manual linking
+        // Unmatched meeting ID — store as a safety-net row tagged with the
+        // host email so it can be linked to an engagement manually if needed.
         await supabase.from("engagements").insert({
-          email: hostEmail.toLowerCase(),
+          email: (hostEmail ?? "unknown@unknown.invalid").toLowerCase(),
           status: "unmatched",
           transcript_url: transcriptUrl,
+          zoom_meeting_id: meetingId,
         });
       }
     }

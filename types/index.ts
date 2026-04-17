@@ -118,6 +118,8 @@ export interface Brief {
   additionalInstruction: string;
 }
 
+export type LeadStatus = "lead" | "correspondence";
+
 export interface Lead {
   id: string;
   name: string | null;
@@ -127,7 +129,9 @@ export interface Lead {
   utm_source: string | null;
   utm_medium: string | null;
   utm_campaign: string | null;
-  status: "new" | "contacted" | "qualified" | "disqualified";
+  utm_term: string | null;
+  utm_content: string | null;
+  status: LeadStatus;
   brevo_list_id: number | null;
   created_at: string;
 }
@@ -147,6 +151,7 @@ export interface Engagement {
   brief_doc_id: string | null;
   zoom_score: number | null;
   zoom_analysis: ZoomAnalysisCategory[] | null;
+  zoom_meeting_id: string | null;
   transcript_url: string | null;
   created_at: string;
   updated_at: string;

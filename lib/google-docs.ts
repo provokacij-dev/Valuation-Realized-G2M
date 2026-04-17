@@ -282,8 +282,176 @@ export async function createFormattedBriefDoc(
   return `https://docs.google.com/document/d/${docId}/edit`;
 }
 
+/** Input to appendFormattedAnalysis — shape the post-call analysis to render. */
+export type FormattedAnalysis = {
+  overallScore: number | null;
+  insights: string[];
+  categories: Array<{ category: string; score: number; notes: string }>;
+};
+
 /**
- * Append text to an existing Google Doc identified by docId.
+ * Append a formatted "Post-call analysis" section to an existing Google Doc:
+ * HEADING_2 section title, overall score paragraph, HEADING_3 insights with
+ * numbered list, and HEADING_3 category scores with a 3-column table
+ * (Category / Score / Notes) with a bold header row.
+ */
+export async function appendFormattedAnalysis(
+  docId: string,
+  analysis: FormattedAnalysis,
+): Promise<void> {
+  const auth = getAuth();
+  const docs = google.docs({ version: "v1", auth });
+
+  // 1. Find the insertion point: just before the final trailing newline.
+  const docBefore = await docs.documents.get({ documentId: docId });
+  const bodyEnd = docBefore.data.body?.content?.at(-1)?.endIndex ?? 1;
+  const baseIndex = Math.max(1, bodyEnd - 1);
+
+  // 2. Build appended text + paragraph styles, keeping indices relative to baseIndex.
+  //    Prefix with "\n\n" so we start a fresh blank-line-separated section.
+  type Styling = { startIndex: number; endIndex: number; namedStyleType: string };
+  const paragraphStyles: Styling[] = [];
+  let appended = "\n\n";
+
+  const appendPara = (content: string, namedStyleType?: string) => {
+    const startIndex = baseIndex + appended.length;
+    appended += content + "\n";
+    const endIndex = baseIndex + appended.length;
+    if (namedStyleType) {
+      paragraphStyles.push({ startIndex, endIndex, namedStyleType });
+    }
+    return { startIndex, endIndex };
+  };
+
+  // Section: Post-call analysis
+  appendPara("Post-call analysis", "HEADING_2");
+  appendPara(`Overall score: ${analysis.overallScore ?? "N/A"}/100`);
+
+  // Top coaching insights
+  let insightsRange: { startIndex: number; endIndex: number } | null = null;
+  if (analysis.insights.length > 0) {
+    appendPara("Top coaching insights", "HEADING_3");
+    const listStart = baseIndex + appended.length;
+    for (const ins of analysis.insights) {
+      appendPara(ins);
+    }
+    const listEnd = baseIndex + appended.length;
+    insightsRange = { startIndex: listStart, endIndex: listEnd };
+  }
+
+  // Category scores — table goes in second batch, anchor is the position right
+  // after the HEADING_3 paragraph.
+  let tableAnchor: number | null = null;
+  const hasCategories = analysis.categories.length > 0;
+  if (hasCategories) {
+    appendPara("Category scores", "HEADING_3");
+    tableAnchor = baseIndex + appended.length;
+    appendPara(""); // blank paragraph — table inserted at tableAnchor
+  }
+
+  // 3. First batchUpdate: insertText + paragraph styles + bullets.
+  const firstRequests: docs_v1.Schema$Request[] = [
+    { insertText: { location: { index: baseIndex }, text: appended } },
+  ];
+  for (const s of paragraphStyles) {
+    firstRequests.push({
+      updateParagraphStyle: {
+        range: { startIndex: s.startIndex, endIndex: s.endIndex },
+        paragraphStyle: { namedStyleType: s.namedStyleType },
+        fields: "namedStyleType",
+      },
+    });
+  }
+  if (insightsRange) {
+    firstRequests.push({
+      createParagraphBullets: {
+        range: insightsRange,
+        bulletPreset: "NUMBERED_DECIMAL_ALPHA_ROMAN",
+      },
+    });
+  }
+  await docs.documents.batchUpdate({
+    documentId: docId,
+    requestBody: { requests: firstRequests },
+  });
+
+  // 4. Second pass: insert the category table + fill + bold header.
+  if (tableAnchor !== null && hasCategories) {
+    const rowData: Array<[string, string, string]> = [["Category", "Score", "Notes"]];
+    for (const c of analysis.categories) {
+      rowData.push([c.category, `${c.score}/5`, c.notes]);
+    }
+
+    await docs.documents.batchUpdate({
+      documentId: docId,
+      requestBody: {
+        requests: [
+          {
+            insertTable: {
+              location: { index: tableAnchor },
+              rows: rowData.length,
+              columns: 3,
+            },
+          },
+        ],
+      },
+    });
+
+    // Fetch to find cell indices, then fill in reverse order.
+    const docMid = await docs.documents.get({ documentId: docId });
+    // We want the last table in the document (the one we just inserted).
+    const tableEl = (docMid.data.body?.content ?? []).filter((c) => c.table).pop();
+    const tableRows = tableEl?.table?.tableRows ?? [];
+
+    const fillRequests: docs_v1.Schema$Request[] = [];
+    for (let r = rowData.length - 1; r >= 0; r--) {
+      for (let c = 2; c >= 0; c--) {
+        const cellStartIdx = tableRows[r]?.tableCells?.[c]?.content?.[0]?.startIndex;
+        const value = rowData[r][c];
+        if (cellStartIdx != null && value) {
+          fillRequests.push({
+            insertText: { location: { index: cellStartIdx }, text: value },
+          });
+        }
+      }
+    }
+    if (fillRequests.length > 0) {
+      await docs.documents.batchUpdate({
+        documentId: docId,
+        requestBody: { requests: fillRequests },
+      });
+    }
+
+    // Bold the header row.
+    const docFinal = await docs.documents.get({ documentId: docId });
+    const tableEl2 = (docFinal.data.body?.content ?? []).filter((c) => c.table).pop();
+    const headerCells = tableEl2?.table?.tableRows?.[0]?.tableCells ?? [];
+    const boldRequests: docs_v1.Schema$Request[] = [];
+    for (const cell of headerCells) {
+      const elem = cell.content?.[0]?.paragraph?.elements?.[0];
+      if (elem?.startIndex != null && elem?.endIndex != null && elem.endIndex > elem.startIndex + 1) {
+        boldRequests.push({
+          updateTextStyle: {
+            range: { startIndex: elem.startIndex, endIndex: elem.endIndex - 1 },
+            textStyle: { bold: true },
+            fields: "bold",
+          },
+        });
+      }
+    }
+    if (boldRequests.length > 0) {
+      await docs.documents.batchUpdate({
+        documentId: docId,
+        requestBody: { requests: boldRequests },
+      });
+    }
+  }
+}
+
+/**
+ * Append plain text to an existing Google Doc identified by docId.
+ * Kept for backward compatibility; prefer appendFormattedAnalysis for post-call
+ * analysis so formatting matches the rest of the brief.
  */
 export async function appendToDoc(docId: string, content: string): Promise<void> {
   const auth = getAuth();
