@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import type { Lead } from "@/types";
+import type { LeadStatus } from "@/types";
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,9 +14,24 @@ export async function GET(request: NextRequest) {
 
     if (status) query = query.eq("status", status);
 
-    const { data, error } = await query;
+    const [{ data: leads, error }, { data: engagements, error: engErr }] = await Promise.all([
+      query,
+      supabase.from("engagements").select("email"),
+    ]);
     if (error) throw error;
-    return NextResponse.json({ leads: data ?? [] });
+    if (engErr) throw engErr;
+
+    const engagedEmails = new Set(
+      (engagements ?? [])
+        .map((e) => e.email?.toLowerCase())
+        .filter((e): e is string => typeof e === "string" && e.length > 0)
+    );
+
+    const filtered = (leads ?? []).filter(
+      (l) => !engagedEmails.has((l.email ?? "").toLowerCase())
+    );
+
+    return NextResponse.json({ leads: filtered });
   } catch (error) {
     console.error("Leads read error:", error);
     return NextResponse.json({ error: "Failed to read leads" }, { status: 500 });
@@ -26,7 +41,7 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, status } = body as { id: string; status: Lead["status"] };
+    const { id, status } = body as { id: string; status: LeadStatus };
 
     const { error } = await supabase
       .from("leads")
@@ -38,5 +53,24 @@ export async function PATCH(request: NextRequest) {
   } catch (error) {
     console.error("Leads update error:", error);
     return NextResponse.json({ error: "Failed to update lead" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { id } = body as { id: string };
+
+    if (!id) {
+      return NextResponse.json({ error: "id is required" }, { status: 400 });
+    }
+
+    const { error } = await supabase.from("leads").delete().eq("id", id);
+
+    if (error) throw error;
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Leads delete error:", error);
+    return NextResponse.json({ error: "Failed to delete lead" }, { status: 500 });
   }
 }

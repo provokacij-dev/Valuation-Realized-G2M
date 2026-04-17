@@ -18,3 +18,4 @@ skills.json
 # misc
 .DS_Store
 *.log
+.gstack/

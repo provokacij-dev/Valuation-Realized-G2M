@@ -20,6 +20,8 @@ export async function POST(request: NextRequest) {
     utm_source?: string;
     utm_medium?: string;
     utm_campaign?: string;
+    utm_term?: string;
+    utm_content?: string;
   };
 
   try {
@@ -41,7 +43,9 @@ export async function POST(request: NextRequest) {
     utm_source: body.utm_source ?? null,
     utm_medium: body.utm_medium ?? null,
     utm_campaign: body.utm_campaign ?? null,
-    status: "new",
+    utm_term: body.utm_term ?? null,
+    utm_content: body.utm_content ?? null,
+    status: "lead",
     brevo_list_id: BREVO_LEADS_LIST_ID,
   };
 

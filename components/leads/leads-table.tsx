@@ -1,36 +1,36 @@
 "use client";
 
 import { useState } from "react";
-import type { Lead } from "@/types";
+import type { Lead, LeadStatus } from "@/types";
 
-const STATUS_LABELS: Record<Lead["status"], string> = {
-  new: "New",
-  contacted: "Contacted",
-  qualified: "Qualified",
-  disqualified: "Disqualified",
+const STATUS_LABELS: Record<LeadStatus, string> = {
+  lead: "Lead",
+  correspondence: "Correspondence",
 };
 
-const STATUS_COLORS: Record<Lead["status"], string> = {
-  new: "bg-blue-100 text-blue-700",
-  contacted: "bg-yellow-100 text-yellow-700",
-  qualified: "bg-green-100 text-green-700",
-  disqualified: "bg-gray-100 text-gray-500",
+const STATUS_COLORS: Record<LeadStatus, string> = {
+  lead: "bg-blue-100 text-blue-700",
+  correspondence: "bg-yellow-100 text-yellow-700",
 };
+
+const FILTER_STATUSES: LeadStatus[] = ["lead", "correspondence"];
 
 interface Props {
   leads: Lead[];
-  onStatusChange: (id: string, status: Lead["status"]) => Promise<void>;
+  onStatusChange: (id: string, status: LeadStatus) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
 }
 
-export default function LeadsTable({ leads, onStatusChange }: Props) {
+export default function LeadsTable({ leads, onStatusChange, onDelete }: Props) {
   const [updating, setUpdating] = useState<string | null>(null);
-  const [filterStatus, setFilterStatus] = useState<Lead["status"] | "all">("all");
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [filterStatus, setFilterStatus] = useState<LeadStatus | "all">("all");
 
   const filtered = filterStatus === "all"
     ? leads
     : leads.filter((l) => l.status === filterStatus);
 
-  async function handleStatusChange(id: string, status: Lead["status"]) {
+  async function handleStatusChange(id: string, status: LeadStatus) {
     setUpdating(id);
     try {
       await onStatusChange(id, status);
@@ -39,11 +39,21 @@ export default function LeadsTable({ leads, onStatusChange }: Props) {
     }
   }
 
+  async function handleDelete(id: string) {
+    if (!window.confirm("Delete this lead? This cannot be undone.")) return;
+    setDeleting(id);
+    try {
+      await onDelete(id);
+    } finally {
+      setDeleting(null);
+    }
+  }
+
   return (
     <div>
       {/* Filter bar */}
-      <div className="flex gap-2 mb-4">
-        {(["all", "new", "contacted", "qualified", "disqualified"] as const).map((s) => (
+      <div className="flex gap-2 mb-4 flex-wrap">
+        {(["all", ...FILTER_STATUSES] as const).map((s) => (
           <button
             key={s}
             onClick={() => setFilterStatus(s)}
@@ -70,10 +80,10 @@ export default function LeadsTable({ leads, onStatusChange }: Props) {
               <tr className="border-b border-gray-200">
                 <th className="text-left py-3 pr-4 font-medium text-gray-500">Name</th>
                 <th className="text-left py-3 pr-4 font-medium text-gray-500">Email</th>
-                <th className="text-left py-3 pr-4 font-medium text-gray-500">Source</th>
                 <th className="text-left py-3 pr-4 font-medium text-gray-500">UTMs</th>
                 <th className="text-left py-3 pr-4 font-medium text-gray-500">Status</th>
-                <th className="text-left py-3 font-medium text-gray-500">Created</th>
+                <th className="text-left py-3 pr-4 font-medium text-gray-500">Created</th>
+                <th className="text-right py-3 font-medium text-gray-500">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -86,18 +96,17 @@ export default function LeadsTable({ leads, onStatusChange }: Props) {
                     )}
                   </td>
                   <td className="py-3 pr-4 text-gray-600">{lead.email}</td>
-                  <td className="py-3 pr-4 text-gray-500">{lead.source ?? "—"}</td>
                   <td className="py-3 pr-4 text-xs text-gray-400">
-                    {[lead.utm_source, lead.utm_medium, lead.utm_campaign]
+                    {[lead.utm_term, lead.utm_content]
                       .filter(Boolean)
                       .join(" / ") || "—"}
                   </td>
                   <td className="py-3 pr-4">
                     <select
                       value={lead.status}
-                      disabled={updating === lead.id}
+                      disabled={updating === lead.id || deleting === lead.id}
                       onChange={(e) =>
-                        handleStatusChange(lead.id, e.target.value as Lead["status"])
+                        handleStatusChange(lead.id, e.target.value as LeadStatus)
                       }
                       className={`text-xs font-medium px-2 py-1 rounded border-0 cursor-pointer appearance-none ${STATUS_COLORS[lead.status]} ${
                         updating === lead.id ? "opacity-50" : ""
@@ -110,8 +119,17 @@ export default function LeadsTable({ leads, onStatusChange }: Props) {
                       ))}
                     </select>
                   </td>
-                  <td className="py-3 text-xs text-gray-400">
+                  <td className="py-3 pr-4 text-xs text-gray-400">
                     {new Date(lead.created_at).toLocaleDateString()}
+                  </td>
+                  <td className="py-3 text-right">
+                    <button
+                      onClick={() => handleDelete(lead.id)}
+                      disabled={deleting === lead.id || updating === lead.id}
+                      className={`text-xs font-medium text-red-600 hover:text-red-800 disabled:opacity-50 disabled:cursor-not-allowed`}
+                    >
+                      {deleting === lead.id ? "Deleting…" : "Delete"}
+                    </button>
                   </td>
                 </tr>
               ))}

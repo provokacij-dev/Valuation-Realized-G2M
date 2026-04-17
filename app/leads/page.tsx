@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import LeadsTable from "@/components/leads/leads-table";
-import type { Lead } from "@/types";
+import type { Lead, LeadStatus } from "@/types";
 
 export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -22,7 +22,7 @@ export default function LeadsPage() {
       });
   }, []);
 
-  async function handleStatusChange(id: string, status: Lead["status"]) {
+  async function handleStatusChange(id: string, status: LeadStatus) {
     const res = await fetch("/api/leads", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -30,6 +30,16 @@ export default function LeadsPage() {
     });
     if (!res.ok) throw new Error("Failed to update status");
     setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, status } : l)));
+  }
+
+  async function handleDelete(id: string) {
+    const res = await fetch("/api/leads", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    if (!res.ok) throw new Error("Failed to delete lead");
+    setLeads((prev) => prev.filter((l) => l.id !== id));
   }
 
   return (
@@ -63,7 +73,11 @@ export default function LeadsPage() {
 
       {!loading && !error && (
         <div className="bg-white border border-gray-200 rounded-xl p-6">
-          <LeadsTable leads={leads} onStatusChange={handleStatusChange} />
+          <LeadsTable
+            leads={leads}
+            onStatusChange={handleStatusChange}
+            onDelete={handleDelete}
+          />
         </div>
       )}
     </div>
