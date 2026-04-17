@@ -1,4 +1,4 @@
-import { google } from "googleapis";
+import { google, docs_v1 } from "googleapis";
 import { getGoogleOAuth2Client } from "./google-auth";
 
 // Docs/Drive calls run as the real user (provokacij@gmail.com) via OAuth —
@@ -7,9 +7,30 @@ function getAuth() {
   return getGoogleOAuth2Client();
 }
 
+/** Structured brief content used by createFormattedBriefDoc. */
+export type BriefContent = {
+  meta: {
+    email: string;
+    phone?: string | null;
+    scheduledDisplay: string;
+  };
+  bookingAnswers?: Array<{ question: string; answer: string }>;
+  research?: string | null;
+  scoring?: {
+    fitScore: number | null;
+    fitReasoning?: string | null;
+    likelyObjection?: string | null;
+    meetingAngle?: string | null;
+  };
+  questions?: string[];
+  levers?: { upside?: string[]; downside?: string[] } | null;
+};
+
 /**
- * Create a new Google Doc in GOOGLE_DOCS_FOLDER_ID with the given title and content.
+ * Create a new Google Doc in GOOGLE_DOCS_FOLDER_ID with the given title and plain-text content.
  * Returns the public URL of the created doc.
+ * Kept for backward compatibility (e.g. appendToDoc callers); new callers should prefer
+ * createFormattedBriefDoc which produces a properly formatted brief with headings and a table.
  */
 export async function createBriefDoc(title: string, content: string): Promise<string> {
   const folderId = process.env.GOOGLE_DOCS_FOLDER_ID;
@@ -19,7 +40,6 @@ export async function createBriefDoc(title: string, content: string): Promise<st
   const docs = google.docs({ version: "v1", auth });
   const drive = google.drive({ version: "v3", auth });
 
-  // 1. Create the doc directly inside the target folder in a single call.
   const file = await drive.files.create({
     requestBody: {
       name: title,
@@ -30,7 +50,6 @@ export async function createBriefDoc(title: string, content: string): Promise<st
   });
   const docId = file.data.id!;
 
-  // 2. Insert content
   if (content) {
     await docs.documents.batchUpdate({
       documentId: docId,
@@ -45,6 +64,219 @@ export async function createBriefDoc(title: string, content: string): Promise<st
         ],
       },
     });
+  }
+
+  return `https://docs.google.com/document/d/${docId}/edit`;
+}
+
+/**
+ * Create a Google Doc with proper formatting: HEADING_1 title, HEADING_2 section
+ * headers, numbered list for questions, and a 2-column table for valuation levers
+ * with a bold header row.
+ */
+export async function createFormattedBriefDoc(
+  title: string,
+  brief: BriefContent,
+): Promise<string> {
+  const folderId = process.env.GOOGLE_DOCS_FOLDER_ID;
+  if (!folderId) throw new Error("GOOGLE_DOCS_FOLDER_ID not configured");
+
+  const auth = getAuth();
+  const docs = google.docs({ version: "v1", auth });
+  const drive = google.drive({ version: "v3", auth });
+
+  // 1. Create doc inside the target folder.
+  const file = await drive.files.create({
+    requestBody: {
+      name: title,
+      mimeType: "application/vnd.google-apps.document",
+      parents: [folderId],
+    },
+    fields: "id",
+  });
+  const docId = file.data.id!;
+
+  // 2. Build concatenated text + record formatting ranges. Docs API uses 1-based
+  //    indices where index 1 is the first body position. A paragraph ending in "\n"
+  //    spans [start, start + len(paragraph + "\n")).
+  type Styling = { startIndex: number; endIndex: number; namedStyleType: string };
+  const paragraphStyles: Styling[] = [];
+  let text = "";
+
+  const appendPara = (content: string, namedStyleType?: string) => {
+    const startIndex = text.length + 1;
+    const chunk = content + "\n";
+    text += chunk;
+    const endIndex = text.length + 1;
+    if (namedStyleType) {
+      paragraphStyles.push({ startIndex, endIndex, namedStyleType });
+    }
+    return { startIndex, endIndex };
+  };
+
+  // Title (H1)
+  appendPara(title, "HEADING_1");
+
+  // Meta line
+  const metaParts = [
+    `Email: ${brief.meta.email}`,
+    brief.meta.phone ? `Phone: ${brief.meta.phone}` : null,
+    `Scheduled: ${brief.meta.scheduledDisplay}`,
+  ].filter(Boolean) as string[];
+  appendPara(metaParts.join(" · "));
+  appendPara("");
+
+  // Booking form answers (H2 + plain paragraphs)
+  if (brief.bookingAnswers && brief.bookingAnswers.length > 0) {
+    appendPara("Booking form answers", "HEADING_2");
+    for (const qa of brief.bookingAnswers) {
+      appendPara(`${qa.question}: ${qa.answer}`);
+    }
+    appendPara("");
+  }
+
+  // Research (H2 + body paragraphs)
+  if (brief.research) {
+    appendPara("Research", "HEADING_2");
+    const paragraphs = brief.research.split(/\n+/).map((p) => p.trim()).filter(Boolean);
+    for (const p of paragraphs) {
+      appendPara(p);
+    }
+    appendPara("");
+  }
+
+  // Lead scoring (H2 + key-value lines)
+  if (brief.scoring) {
+    appendPara("Lead scoring", "HEADING_2");
+    appendPara(`Fit score: ${brief.scoring.fitScore ?? "N/A"}/10`);
+    if (brief.scoring.fitReasoning) appendPara(`Reasoning: ${brief.scoring.fitReasoning}`);
+    if (brief.scoring.likelyObjection) appendPara(`Likely objection: ${brief.scoring.likelyObjection}`);
+    if (brief.scoring.meetingAngle) appendPara(`Meeting angle: ${brief.scoring.meetingAngle}`);
+    appendPara("");
+  }
+
+  // Sector-specific questions (H2 + numbered list)
+  let questionsRange: { startIndex: number; endIndex: number } | null = null;
+  if (brief.questions && brief.questions.length > 0) {
+    appendPara("Sector-specific questions", "HEADING_2");
+    const listStart = text.length + 1;
+    for (const q of brief.questions) {
+      appendPara(q);
+    }
+    const listEnd = text.length + 1;
+    questionsRange = { startIndex: listStart, endIndex: listEnd };
+    appendPara("");
+  }
+
+  // Valuation levers: H2 header inserted now, the table itself goes in a second pass
+  // because tables need explicit insertTable + cell population via index lookups.
+  let tableAnchor: number | null = null;
+  const up = brief.levers?.upside ?? [];
+  const dn = brief.levers?.downside ?? [];
+  const hasLevers = up.length > 0 || dn.length > 0;
+  if (hasLevers) {
+    appendPara("Valuation levers", "HEADING_2");
+    tableAnchor = text.length + 1;
+    appendPara(""); // blank paragraph; table will be inserted at tableAnchor, which is just before this newline
+  }
+
+  // First batchUpdate: all text + paragraph styles + numbered list
+  const firstRequests: docs_v1.Schema$Request[] = [
+    { insertText: { location: { index: 1 }, text } },
+  ];
+  for (const s of paragraphStyles) {
+    firstRequests.push({
+      updateParagraphStyle: {
+        range: { startIndex: s.startIndex, endIndex: s.endIndex },
+        paragraphStyle: { namedStyleType: s.namedStyleType },
+        fields: "namedStyleType",
+      },
+    });
+  }
+  if (questionsRange) {
+    firstRequests.push({
+      createParagraphBullets: {
+        range: questionsRange,
+        bulletPreset: "NUMBERED_DECIMAL_ALPHA_ROMAN",
+      },
+    });
+  }
+  await docs.documents.batchUpdate({
+    documentId: docId,
+    requestBody: { requests: firstRequests },
+  });
+
+  // Second pass: insert table + populate cells + bold header row.
+  if (tableAnchor !== null && hasLevers) {
+    const rowCount = Math.max(up.length, dn.length);
+    const rowData: Array<[string, string]> = [["Upside levers", "Downside levers"]];
+    for (let i = 0; i < rowCount; i++) {
+      rowData.push([up[i] ?? "", dn[i] ?? ""]);
+    }
+
+    // Insert empty table.
+    await docs.documents.batchUpdate({
+      documentId: docId,
+      requestBody: {
+        requests: [
+          {
+            insertTable: {
+              location: { index: tableAnchor },
+              rows: rowData.length,
+              columns: 2,
+            },
+          },
+        ],
+      },
+    });
+
+    // Fetch doc to find cell indices, then fill cells (reverse order keeps earlier indices valid).
+    const docData = await docs.documents.get({ documentId: docId });
+    const tableEl = (docData.data.body?.content ?? []).filter((c) => c.table).pop();
+    const tableRows = tableEl?.table?.tableRows ?? [];
+
+    const fillRequests: docs_v1.Schema$Request[] = [];
+    for (let r = rowData.length - 1; r >= 0; r--) {
+      for (let c = 1; c >= 0; c--) {
+        const cellStartIdx = tableRows[r]?.tableCells?.[c]?.content?.[0]?.startIndex;
+        const value = rowData[r][c];
+        if (cellStartIdx != null && value) {
+          fillRequests.push({
+            insertText: { location: { index: cellStartIdx }, text: value },
+          });
+        }
+      }
+    }
+    if (fillRequests.length > 0) {
+      await docs.documents.batchUpdate({
+        documentId: docId,
+        requestBody: { requests: fillRequests },
+      });
+    }
+
+    // Bold the header row. Re-fetch for updated cell text ranges.
+    const docData2 = await docs.documents.get({ documentId: docId });
+    const tableEl2 = (docData2.data.body?.content ?? []).filter((c) => c.table).pop();
+    const headerCells = tableEl2?.table?.tableRows?.[0]?.tableCells ?? [];
+    const boldRequests: docs_v1.Schema$Request[] = [];
+    for (const cell of headerCells) {
+      const elem = cell.content?.[0]?.paragraph?.elements?.[0];
+      if (elem?.startIndex != null && elem?.endIndex != null && elem.endIndex > elem.startIndex + 1) {
+        boldRequests.push({
+          updateTextStyle: {
+            range: { startIndex: elem.startIndex, endIndex: elem.endIndex - 1 },
+            textStyle: { bold: true },
+            fields: "bold",
+          },
+        });
+      }
+    }
+    if (boldRequests.length > 0) {
+      await docs.documents.batchUpdate({
+        documentId: docId,
+        requestBody: { requests: boldRequests },
+      });
+    }
   }
 
   return `https://docs.google.com/document/d/${docId}/edit`;

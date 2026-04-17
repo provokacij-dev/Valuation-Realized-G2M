@@ -3,7 +3,7 @@ import { waitUntil } from "@vercel/functions";
 import { createHmac, timingSafeEqual } from "crypto";
 import { supabase } from "@/lib/supabase";
 import { getAnthropicClient } from "@/lib/anthropic";
-import { createBriefDoc } from "@/lib/google-docs";
+import { createFormattedBriefDoc } from "@/lib/google-docs";
 import { sendTransactionalEmail } from "@/lib/brevo";
 
 // ── Signature verification ───────────────────────────────────────────────────
@@ -321,61 +321,27 @@ async function runPostBookingTasks(
     console.error("Claude research error (non-fatal):", err);
   }
 
-  // 2. Google Doc
+  // 2. Google Doc (formatted: HEADING_1 title, HEADING_2 sections, numbered questions, levers table)
   try {
-    const qaLines = questionsAndAnswers.length > 0
-      ? [
-          "",
-          "=== BOOKING FORM ANSWERS ===",
-          ...questionsAndAnswers.map((qa) => `${qa.question}: ${qa.answer}`),
-        ]
-      : [];
-
-    const curatedQLines: string[] = [];
-    if (curatedQuestions && curatedQuestions.length > 0) {
-      curatedQLines.push("", "=== SECTOR-SPECIFIC QUESTIONS ===");
-      curatedQuestions.forEach((q, i) => curatedQLines.push(`${i + 1}. ${q}`));
-    }
-
-    const leversLines: string[] = [];
-    if (valuationLevers) {
-      const up = valuationLevers.upside ?? [];
-      const dn = valuationLevers.downside ?? [];
-      if (up.length || dn.length) {
-        leversLines.push("", "=== VALUATION LEVERS (sector) ===");
-        if (up.length) {
-          leversLines.push("UPSIDE:");
-          up.forEach((l) => leversLines.push(`+ ${l}`));
-        }
-        if (dn.length) {
-          leversLines.push("", "DOWNSIDE:");
-          dn.forEach((l) => leversLines.push(`- ${l}`));
-        }
-      }
-    }
-
-    const docContent = [
-      `Meeting Brief: ${name}`,
-      `Email: ${email}`,
-      phone ? `Phone: ${phone}` : null,
-      `Scheduled: ${new Date(scheduledAt).toLocaleString()}`,
-      ...qaLines,
-      "",
-      "=== RESEARCH ===",
-      research ?? "(Research unavailable)",
-      "",
-      "=== LEAD SCORING ===",
-      `Fit Score: ${fitScore ?? "N/A"}/10`,
-      `Reasoning: ${fitReasoning ?? "N/A"}`,
-      `Likely Objection: ${likelyObjection ?? "N/A"}`,
-      `Meeting Angle: ${meetingAngle ?? "N/A"}`,
-      ...curatedQLines,
-      ...leversLines,
-    ].filter(Boolean).join("\n");
-
-    const url = await createBriefDoc(`Brief: ${name} — ${new Date(scheduledAt).toLocaleDateString()}`, docContent);
+    const docTitle = `Brief: ${name} — ${new Date(scheduledAt).toLocaleDateString()}`;
+    const url = await createFormattedBriefDoc(docTitle, {
+      meta: {
+        email,
+        phone,
+        scheduledDisplay: new Date(scheduledAt).toLocaleString(),
+      },
+      bookingAnswers: questionsAndAnswers,
+      research: research ?? "(Research unavailable)",
+      scoring: {
+        fitScore,
+        fitReasoning,
+        likelyObjection,
+        meetingAngle,
+      },
+      questions: curatedQuestions ?? [],
+      levers: valuationLevers,
+    });
     briefDocUrl = url;
-    // Extract doc ID from URL
     const match = url.match(/\/document\/d\/([a-zA-Z0-9_-]+)/);
     briefDocId = match ? match[1] : null;
   } catch (err) {
