@@ -1,13 +1,10 @@
 import { google } from "googleapis";
-import { getGoogleAuth } from "./google-auth";
+import { getGoogleOAuth2Client } from "./google-auth";
 
-const DOCS_SCOPES = [
-  "https://www.googleapis.com/auth/documents",
-  "https://www.googleapis.com/auth/drive",
-];
-
+// Docs/Drive calls run as the real user (provokacij@gmail.com) via OAuth —
+// service accounts have no Drive storage quota so they can't create files.
 function getAuth() {
-  return getGoogleAuth(DOCS_SCOPES);
+  return getGoogleOAuth2Client();
 }
 
 /**
@@ -22,18 +19,18 @@ export async function createBriefDoc(title: string, content: string): Promise<st
   const docs = google.docs({ version: "v1", auth });
   const drive = google.drive({ version: "v3", auth });
 
-  // 1. Create empty doc
-  const created = await docs.documents.create({ requestBody: { title } });
-  const docId = created.data.documentId!;
-
-  // 2. Move to folder
-  await drive.files.update({
-    fileId: docId,
-    addParents: folderId,
-    fields: "id, parents",
+  // 1. Create the doc directly inside the target folder in a single call.
+  const file = await drive.files.create({
+    requestBody: {
+      name: title,
+      mimeType: "application/vnd.google-apps.document",
+      parents: [folderId],
+    },
+    fields: "id",
   });
+  const docId = file.data.id!;
 
-  // 3. Insert content
+  // 2. Insert content
   if (content) {
     await docs.documents.batchUpdate({
       documentId: docId,
