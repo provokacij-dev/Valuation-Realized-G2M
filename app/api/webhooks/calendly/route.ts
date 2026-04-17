@@ -5,7 +5,6 @@ import { supabase } from "@/lib/supabase";
 import { getAnthropicClient } from "@/lib/anthropic";
 import { createBriefDoc } from "@/lib/google-docs";
 import { sendTransactionalEmail } from "@/lib/brevo";
-import { formatQuestionBankForPrompt } from "@/lib/question-bank";
 
 // ── Signature verification ───────────────────────────────────────────────────
 
@@ -95,17 +94,33 @@ ${searchContext ? `Pre-fetched search results are provided above. Use them as yo
 
 Do NOT default to LOW just because the email is Gmail. Gmail is common among legitimate founders in emerging markets (UAE, KSA, Africa, Egypt, etc.).
 
-## TASK 2 — Curate diagnostic questions
-Below is the full question bank used in the discovery call, split into 6 domains. For each domain:
-- Select the 4-6 questions MOST relevant to this specific invitee's business
-- Add 1-2 sector-specific questions if the invitee's industry warrants it (e.g. for a smart home installer: "Do you install and resell, or do you R&D and manufacture?"; for a SaaS company: "What is your ARR and MRR split?")
-- Omit questions that are clearly not applicable (e.g. skip tech stack questions for a pure services business)
+## TASK 2 — Sector-specific diagnostic questions
 
-Output the curated questions as a JSON block on its own line after the research, using this exact format:
-{"curated_questions":{"leadership":["q1","q2",...],"commercial":["q1","q2",...],"financial":["q1","q2",...],"operations":["q1","q2",...],"legal":["q1","q2",...],"technology":["q1","q2",...]}}
+Generate EXACTLY 5 questions that probe value drivers and risks UNIQUE to this specific business / sector / geography.
 
-## TASK 3 — Scoring
-Then output a second JSON block on its own line:
+**Rules:**
+- Each question MUST reference something concrete: the company's sector, revenue model, geography, stated booking-form answers, or macro drivers (e.g. KSA giga-projects like NEOM / Red Sea / Diriyah, Vision 2030 pipeline, UAE corporate tax, commodity cycle, carbon pricing).
+- DO NOT ask generic M&A-readiness questions (management team depth, financial reporting quality, generic customer concentration, systems/processes, owner dependency, three-month absence tests). Those live on a separate checklist.
+- Each question should feel researched — one Vaiga could NOT have asked a random SME owner without knowing the business.
+
+Good example: "Are your revenues tied to specific KSA giga-projects (NEOM, Red Sea, Diriyah) — and what is the pipeline once those projects complete?"
+Bad example: "Do you have a management team that could run the business if you stepped back for three months?"
+
+Output as a JSON block on its own line (flat array of 5 strings):
+{"curated_questions":["q1","q2","q3","q4","q5"]}
+
+## TASK 3 — Valuation levers for this sector
+
+Identify 3-5 UPSIDE and 3-5 DOWNSIDE valuation levers specific to this sector / geography. Think like an M&A advisor briefing a seller: what specifically in THIS industry drives a buyer to pay a higher multiple, and what drives them to push back / discount?
+
+Each lever: 1-2 sentences, concrete, sector-specific (not generic "recurring revenue is good").
+
+Output as a JSON block on its own line:
+{"valuation_levers":{"upside":["lever1","lever2","lever3"],"downside":["lever1","lever2","lever3"]}}
+
+## TASK 4 — Scoring
+
+Output a third JSON block on its own line:
 {"fit_score":X,"fit_reasoning":"...","likely_objection":"...","meeting_angle":"...","public_info_found":true/false,"identity_confidence":"HIGH/MEDIUM/LOW","identity_notes":"..."}
 
 Where:
@@ -113,15 +128,11 @@ Where:
 - fit_reasoning: one sentence on score rationale
 - likely_objection: the most likely pushback in the first meeting
 - meeting_angle: recommended opening angle for Vaiga
-- public_info_found: true if you found ANY verifiable signal (name match, company, LinkedIn, phone); false only if completely ungoogleable after thorough search
+- public_info_found: true if you found ANY verifiable signal; false only if completely ungoogleable
 - identity_confidence: HIGH / MEDIUM / LOW as defined above
-- identity_notes: one sentence summarising what you found (or didn't find) about their identity
+- identity_notes: one sentence summarising what you found
 
-Keep the research section concise (under 300 words). Both JSON blocks must be valid and each on its own line.
-
-## FULL QUESTION BANK
-
-${formatQuestionBankForPrompt()}`;
+Keep the research section concise (under 300 words). All three JSON blocks must be valid and each on its own line.`;
 }
 
 // ── Route handler ────────────────────────────────────────────────────────────
@@ -221,7 +232,8 @@ async function runPostBookingTasks(
   let identityNotes: string | null = null;
   let briefDocUrl: string | null = null;
   let briefDocId: string | null = null;
-  let curatedQuestions: Record<string, string[]> | null = null;
+  let curatedQuestions: string[] | null = null;
+  let valuationLevers: { upside?: string[]; downside?: string[] } | null = null;
 
   const personalEmail = isPersonalEmail(email);
 
@@ -266,12 +278,21 @@ async function runPostBookingTasks(
 
     const text = res.content.filter((b) => b.type === "text").map((b) => (b as { type: "text"; text: string }).text).join("\n").trim();
 
-    // Extract curated questions JSON
-    const curatedMatch = text.match(/\{"curated_questions":\{[\s\S]*?\}\}/);
+    // Extract curated questions JSON (flat array of 5 strings)
+    const curatedMatch = text.match(/\{"curated_questions":\s*\[[\s\S]*?\]\s*\}/);
     if (curatedMatch) {
       try {
         const parsed = JSON.parse(curatedMatch[0]);
-        curatedQuestions = parsed.curated_questions ?? null;
+        curatedQuestions = Array.isArray(parsed.curated_questions) ? parsed.curated_questions : null;
+      } catch {}
+    }
+
+    // Extract valuation levers JSON
+    const leversMatch = text.match(/\{"valuation_levers":\{[\s\S]*?\}\}/);
+    if (leversMatch) {
+      try {
+        const parsed = JSON.parse(leversMatch[0]);
+        valuationLevers = parsed.valuation_levers ?? null;
       } catch {}
     }
 
@@ -290,24 +311,15 @@ async function runPostBookingTasks(
       } catch {}
     }
 
-    // Research is the text minus both JSON blocks
+    // Research is the text minus all three JSON blocks
     research = text
-      .replace(/\{"curated_questions":\{[\s\S]*?\}\}/, "")
+      .replace(/\{"curated_questions":\s*\[[\s\S]*?\]\s*\}/, "")
+      .replace(/\{"valuation_levers":\{[\s\S]*?\}\}/, "")
       .replace(/\{"fit_score"[\s\S]*?\}/, "")
       .trim();
   } catch (err) {
     console.error("Claude research error (non-fatal):", err);
   }
-
-  // Shared lookup used in both Google Doc and email
-  const domainLabels: Record<string, string> = {
-    leadership: "Leadership & People",
-    commercial: "Commercial",
-    financial: "Financial",
-    operations: "Operations",
-    legal: "Legal",
-    technology: "Technology & Data",
-  };
 
   // 2. Google Doc
   try {
@@ -320,11 +332,25 @@ async function runPostBookingTasks(
       : [];
 
     const curatedQLines: string[] = [];
-    if (curatedQuestions) {
-      curatedQLines.push("", "=== CURATED DIAGNOSTIC QUESTIONS ===");
-      for (const [domain, qs] of Object.entries(curatedQuestions)) {
-        curatedQLines.push(`\n[${domainLabels[domain] ?? domain}]`);
-        (qs as string[]).forEach((q, i) => curatedQLines.push(`${i + 1}. ${q}`));
+    if (curatedQuestions && curatedQuestions.length > 0) {
+      curatedQLines.push("", "=== SECTOR-SPECIFIC QUESTIONS ===");
+      curatedQuestions.forEach((q, i) => curatedQLines.push(`${i + 1}. ${q}`));
+    }
+
+    const leversLines: string[] = [];
+    if (valuationLevers) {
+      const up = valuationLevers.upside ?? [];
+      const dn = valuationLevers.downside ?? [];
+      if (up.length || dn.length) {
+        leversLines.push("", "=== VALUATION LEVERS (sector) ===");
+        if (up.length) {
+          leversLines.push("UPSIDE:");
+          up.forEach((l) => leversLines.push(`+ ${l}`));
+        }
+        if (dn.length) {
+          leversLines.push("", "DOWNSIDE:");
+          dn.forEach((l) => leversLines.push(`- ${l}`));
+        }
       }
     }
 
@@ -344,6 +370,7 @@ async function runPostBookingTasks(
       `Likely Objection: ${likelyObjection ?? "N/A"}`,
       `Meeting Angle: ${meetingAngle ?? "N/A"}`,
       ...curatedQLines,
+      ...leversLines,
     ].filter(Boolean).join("\n");
 
     const url = await createBriefDoc(`Brief: ${name} — ${new Date(scheduledAt).toLocaleDateString()}`, docContent);
@@ -386,13 +413,30 @@ async function runPostBookingTasks(
       .formatToParts(meetingDate)
       .find((p) => p.type === "timeZoneName")?.value ?? timezone;
 
-    const curatedQHtml = curatedQuestions
-      ? Object.entries(curatedQuestions)
-          .map(([domain, qs]) =>
-            `<h4>${domainLabels[domain] ?? domain}</h4><ol>${(qs as string[]).map((q) => `<li>${q}</li>`).join("")}</ol>`
-          )
-          .join("")
+    const curatedQHtml = curatedQuestions && curatedQuestions.length > 0
+      ? `<ol>${curatedQuestions.map((q) => `<li style="margin-bottom:6px;">${q}</li>`).join("")}</ol>`
       : "";
+
+    let leversHtml = "";
+    if (valuationLevers) {
+      const up = valuationLevers.upside ?? [];
+      const dn = valuationLevers.downside ?? [];
+      if (up.length || dn.length) {
+        const n = Math.max(up.length, dn.length);
+        let rows = "";
+        for (let i = 0; i < n; i++) {
+          rows += `<tr><td style="border:1px solid #ddd;padding:10px;vertical-align:top;width:50%;">${up[i] ?? ""}</td><td style="border:1px solid #ddd;padding:10px;vertical-align:top;width:50%;">${dn[i] ?? ""}</td></tr>`;
+        }
+        leversHtml = `<hr/><h3>Valuation levers for this sector</h3>
+          <table style="border-collapse:collapse;width:100%;font-size:14px;">
+            <thead><tr>
+              <th style="border:1px solid #ddd;padding:10px;background:#e8f4e8;text-align:left;">Upside levers</th>
+              <th style="border:1px solid #ddd;padding:10px;background:#fde8e8;text-align:left;">Downside levers</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>`;
+      }
+    }
 
     // Flag as suspicious only when personal email AND Claude found LOW identity confidence after web search
     const isSuspicious = personalEmail && identityConfidence === "LOW";
@@ -424,7 +468,8 @@ async function runPostBookingTasks(
         <p><strong>Fit score:</strong> ${fitScore ?? "N/A"}/10 — ${fitReasoning ?? ""}</p>
         <p><strong>Likely objection:</strong> ${likelyObjection ?? "N/A"}</p>
         <p><strong>Meeting angle:</strong> ${meetingAngle ?? "N/A"}</p>
-        ${curatedQHtml ? `<hr/><h3>Curated diagnostic questions</h3>${curatedQHtml}` : ""}
+        ${curatedQHtml ? `<hr/><h3>Sector-specific questions</h3>${curatedQHtml}` : ""}
+        ${leversHtml}
       `,
     });
   } catch (err) {
