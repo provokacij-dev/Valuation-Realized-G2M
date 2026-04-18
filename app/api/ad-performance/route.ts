@@ -14,8 +14,11 @@ export async function GET(request: NextRequest) {
       .select("*")
       .order("total_spend", { ascending: false });
 
-    if (dateFrom) query = query.or(`period_start.gte.${dateFrom},period_start.is.null`);
-    if (dateTo) query = query.or(`period_end.lte.${dateTo},period_end.is.null`);
+    // Overlap test: keep rows whose reporting window intersects [dateFrom, dateTo].
+    // Two ranges overlap when period_end >= dateFrom AND period_start <= dateTo.
+    // NULL endpoints are treated as unbounded, so they always pass.
+    if (dateFrom) query = query.or(`period_end.gte.${dateFrom},period_end.is.null`);
+    if (dateTo) query = query.or(`period_start.lte.${dateTo},period_start.is.null`);
 
     const { data, error } = await query;
 
