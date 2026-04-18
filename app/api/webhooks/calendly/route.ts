@@ -221,6 +221,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true, dedup: true });
   }
 
+  // Pull UTMs from the matching lead (if any) so pipeline attribution survives
+  // even if the lead row is later deleted.
+  const { data: matchingLead } = await supabase
+    .from("leads")
+    .select("utm_term, utm_content")
+    .eq("email", email)
+    .limit(1)
+    .maybeSingle();
+
   // Insert engagement immediately — return 200 fast regardless of downstream failures
   const { data: inserted, error: dbError } = await supabase
     .from("engagements")
@@ -230,6 +239,8 @@ export async function POST(request: NextRequest) {
       scheduled_at: scheduledAt,
       status: "booked",
       zoom_meeting_id: zoomMeetingId,
+      utm_term: matchingLead?.utm_term ?? null,
+      utm_content: matchingLead?.utm_content ?? null,
     })
     .select("id")
     .single();

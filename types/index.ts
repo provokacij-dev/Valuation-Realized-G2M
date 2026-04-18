@@ -118,7 +118,7 @@ export interface Brief {
   additionalInstruction: string;
 }
 
-export type LeadStatus = "lead" | "correspondence";
+export type LeadStatus = "lead" | "correspondence" | "call_booked";
 
 export interface Lead {
   id: string;
@@ -136,12 +136,25 @@ export interface Lead {
   created_at: string;
 }
 
+export type EngagementFunnelStatus =
+  | "call_booked"
+  | "no_show"
+  | "won"
+  | "proposal_sent"
+  | "lost";
+
 export interface Engagement {
   id: string;
   name: string | null;
   email: string;
   scheduled_at: string | null;
+  // Internal pipeline state, driven by the Zoom webhook and analyse endpoint.
+  // Not edited from the UI.
   status: "booked" | "completed" | "converted" | "lost" | "unmatched" | "transcript_pending" | "transcript_failed";
+  // User-facing sales funnel stage, editable via the pipeline UI dropdown.
+  funnel_status: EngagementFunnelStatus;
+  utm_term: string | null;
+  utm_content: string | null;
   research: string | null;
   fit_score: number | null;
   fit_reasoning: string | null;
@@ -155,6 +168,31 @@ export interface Engagement {
   transcript_url: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export type PipelineStatus = LeadStatus | EngagementFunnelStatus;
+
+export interface PipelineRow {
+  source: "lead" | "engagement";
+  source_id: string;
+  name: string | null;
+  email: string;
+  status: PipelineStatus;
+  utm_term: string | null;
+  utm_content: string | null;
+  created_at: string;
+  // engagement-only (null for lead rows)
+  scheduled_at: string | null;
+  fit_score: number | null;
+  fit_reasoning: string | null;
+  likely_objection: string | null;
+  meeting_angle: string | null;
+  brief_doc_url: string | null;
+  zoom_score: number | null;
+  zoom_analysis: ZoomAnalysisCategory[] | null;
+  research: string | null;
+  engagement_status: Engagement["status"] | null;
+  transcript_url: string | null;
 }
 
 export interface ZoomAnalysisCategory {

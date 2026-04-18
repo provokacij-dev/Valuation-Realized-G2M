@@ -40,3 +40,20 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Failed to update engagement" }, { status: 500 });
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { id } = body as { id: string };
+    if (!id) {
+      return NextResponse.json({ error: "Missing id" }, { status: 400 });
+    }
+
+    const { error } = await supabase.from("engagements").delete().eq("id", id);
+    if (error) throw error;
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Engagement delete error:", error);
+    return NextResponse.json({ error: "Failed to delete engagement" }, { status: 500 });
+  }
+}

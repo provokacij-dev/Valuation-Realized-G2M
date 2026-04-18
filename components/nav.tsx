@@ -10,7 +10,6 @@ const links = [
   { href: "/upload", label: "Upload Queue" },
   { href: "/skills", label: "Skills", badge: true },
   { href: "/leads", label: "Leads" },
-  { href: "/engagements", label: "Engagements" },
 ];
 
 export default function Nav() {
