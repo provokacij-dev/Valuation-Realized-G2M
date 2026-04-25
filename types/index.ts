@@ -143,6 +143,8 @@ export type EngagementFunnelStatus =
   | "proposal_sent"
   | "lost";
 
+export type OutcomeVerdict = "win" | "potential_win" | "likely_loss" | "loss";
+
 export interface Engagement {
   id: string;
   name: string | null;
@@ -162,10 +164,27 @@ export interface Engagement {
   meeting_angle: string | null;
   brief_doc_url: string | null;
   brief_doc_id: string | null;
+  // Legacy 31-category Zoom analysis. Replaced by sales-call fields below;
+  // kept on the type only because historical rows still have these populated.
   zoom_score: number | null;
   zoom_analysis: ZoomAnalysisCategory[] | null;
   zoom_meeting_id: string | null;
   transcript_url: string | null;
+  // Post-call sales analysis (PR 4): the new flow creates a separate doc
+  // in the Sales calls Drive folder rather than appending to the brief doc.
+  sales_call_doc_url: string | null;
+  sales_call_doc_id: string | null;
+  sector: string | null;
+  geography: string | null;
+  last_revenue: string | null;
+  last_profit: string | null;
+  indicative_valuation: string | null;
+  business_summary: string | null;
+  pain_point: string | null;
+  outcome_verdict: OutcomeVerdict | null;
+  outcome_rationale: string | null;
+  call_strengths: string | null;
+  call_improvements: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -193,6 +212,19 @@ export interface PipelineRow {
   research: string | null;
   engagement_status: Engagement["status"] | null;
   transcript_url: string | null;
+  // Post-call sales analysis (PR 4)
+  sales_call_doc_url: string | null;
+  sector: string | null;
+  geography: string | null;
+  last_revenue: string | null;
+  last_profit: string | null;
+  indicative_valuation: string | null;
+  business_summary: string | null;
+  pain_point: string | null;
+  outcome_verdict: OutcomeVerdict | null;
+  outcome_rationale: string | null;
+  call_strengths: string | null;
+  call_improvements: string | null;
 }
 
 export interface ZoomAnalysisCategory {
