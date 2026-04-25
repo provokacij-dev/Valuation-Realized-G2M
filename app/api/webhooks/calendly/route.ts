@@ -170,6 +170,14 @@ export async function POST(request: NextRequest) {
         timezone?: string;
         questions_and_answers?: { question: string; answer: string }[];
       };
+      // Calendly v2 also puts invitee fields flat on payload.payload (no .invitee
+      // nesting). Declare them here so the `invitee ?? payload.payload` fallback
+      // typechecks.
+      name?: string;
+      email?: string;
+      text_reminder_number?: string;
+      timezone?: string;
+      questions_and_answers?: { question: string; answer: string }[];
     };
   };
 
@@ -184,7 +192,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true });
   }
 
-  const invitee = payload.payload.invitee;
+  // Calendly v2 sends invitee fields flat on payload.payload; our canary/test
+  // shape nests them under .invitee. Accept both.
+  const invitee = payload.payload.invitee ?? payload.payload;
   // Accept either shape: `payload.event` (our simplified/test shape) or
   // `payload.scheduled_event` (Calendly v2 webhook shape).
   const event = payload.payload.event ?? payload.payload.scheduled_event;
@@ -408,7 +418,7 @@ async function runPostBookingTasks(
     .eq("id", engagementId);
 
   // 4. Brevo notification to Vaiga
-  const vaigaEmail = process.env.NOTIFICATION_EMAIL ?? "vaiga@valuationrealized.com";
+  const vaigaEmail = process.env.NOTIFICATION_EMAIL ?? "vr@valuationrealized.com";
   try {
     // Derive company name from email domain (e.g. tcsldubai.com → TCSL Dubai)
     const emailDomain = email.split("@")[1] ?? "";
