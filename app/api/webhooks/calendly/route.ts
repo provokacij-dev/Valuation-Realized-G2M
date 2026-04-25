@@ -170,6 +170,14 @@ export async function POST(request: NextRequest) {
         timezone?: string;
         questions_and_answers?: { question: string; answer: string }[];
       };
+      // Calendly v2 also puts invitee fields flat on payload.payload (no .invitee
+      // nesting). Declare them here so the `invitee ?? payload.payload` fallback
+      // typechecks.
+      name?: string;
+      email?: string;
+      text_reminder_number?: string;
+      timezone?: string;
+      questions_and_answers?: { question: string; answer: string }[];
     };
   };
 
