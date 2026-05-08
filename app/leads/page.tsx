@@ -19,6 +19,7 @@ const FILTER_STATUSES: PipelineStatus[] = [
   "proposal_sent",
   "won",
   "lost",
+  "disqualified",
 ];
 
 const LEAD_STATUSES = new Set<PipelineStatus>(["lead", "correspondence"]);
@@ -65,7 +66,7 @@ export default function LeadsPage() {
           });
           if (!res.ok) throw new Error("Failed to move lead to engagement");
         } else {
-          // Plain lead status update (lead / correspondence).
+          // Plain lead status update (lead / correspondence / disqualified).
           const res = await fetch("/api/leads", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },

@@ -5,6 +5,7 @@ import type {
   PipelineStatus,
   LeadStatus,
   EngagementFunnelStatus,
+  OutcomeVerdict,
 } from "@/types";
 
 export const STATUS_LABELS: Record<PipelineStatus, string> = {
@@ -15,6 +16,7 @@ export const STATUS_LABELS: Record<PipelineStatus, string> = {
   proposal_sent: "Proposal sent",
   won: "Won",
   lost: "Lost",
+  disqualified: "Disqualified",
 };
 
 export const STATUS_COLORS: Record<PipelineStatus, string> = {
@@ -25,16 +27,37 @@ export const STATUS_COLORS: Record<PipelineStatus, string> = {
   proposal_sent: "bg-purple-100 text-purple-700",
   won: "bg-green-100 text-green-700",
   lost: "bg-red-100 text-red-600",
+  disqualified: "bg-gray-200 text-gray-700",
 };
 
-const LEAD_OPTIONS: LeadStatus[] = ["lead", "correspondence", "call_booked"];
+const LEAD_OPTIONS: LeadStatus[] = [
+  "lead",
+  "correspondence",
+  "call_booked",
+  "disqualified",
+];
 const ENGAGEMENT_OPTIONS: EngagementFunnelStatus[] = [
   "call_booked",
   "no_show",
   "proposal_sent",
   "won",
   "lost",
+  "disqualified",
 ];
+
+const VERDICT_LABELS: Record<OutcomeVerdict, string> = {
+  win: "Win",
+  potential_win: "Potential win",
+  likely_loss: "Likely loss",
+  loss: "Loss",
+};
+
+const VERDICT_COLORS: Record<OutcomeVerdict, string> = {
+  win: "bg-green-100 text-green-700",
+  potential_win: "bg-lime-100 text-lime-700",
+  likely_loss: "bg-orange-100 text-orange-700",
+  loss: "bg-red-100 text-red-600",
+};
 
 interface Props {
   row: PipelineRow;
@@ -61,6 +84,14 @@ export default function PipelineRowView({
 }: Props) {
   const options = row.source === "lead" ? LEAD_OPTIONS : ENGAGEMENT_OPTIONS;
   const canExpand = row.source === "engagement";
+
+  const hasSalesCallSummary =
+    row.business_summary != null ||
+    row.sector != null ||
+    row.outcome_verdict != null ||
+    row.call_strengths != null ||
+    row.call_improvements != null ||
+    row.sales_call_doc_url != null;
 
   async function handleDeleteClick(ev: React.MouseEvent) {
     ev.stopPropagation();
@@ -121,8 +152,27 @@ export default function PipelineRowView({
             "—"
           )}
         </td>
-        <td className="py-3 pr-4 text-center">
-          {row.zoom_score != null ? (
+        <td className="py-3 pr-4 text-center text-xs">
+          {row.sales_call_doc_url ? (
+            <div className="flex flex-col items-center gap-1">
+              <a
+                href={row.sales_call_doc_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(ev) => ev.stopPropagation()}
+                className="text-vr-green underline hover:text-vr-green/70"
+              >
+                Open call →
+              </a>
+              {row.outcome_verdict && (
+                <span
+                  className={`px-2 py-0.5 rounded font-medium ${VERDICT_COLORS[row.outcome_verdict]}`}
+                >
+                  {VERDICT_LABELS[row.outcome_verdict]}
+                </span>
+              )}
+            </div>
+          ) : row.zoom_score != null ? (
             <span
               className={`text-sm font-bold ${
                 row.zoom_score >= 70
@@ -176,77 +226,15 @@ export default function PipelineRowView({
         <tr>
           <td colSpan={10} className="pb-4 pt-0">
             <div className="bg-gray-50 rounded-xl p-4 mx-2 space-y-4">
-              {row.research && (
-                <div>
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                    Research
-                  </h4>
-                  <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                    {row.research}
-                  </p>
-                </div>
-              )}
-
-              {(row.fit_reasoning || row.likely_objection || row.meeting_angle) && (
-                <div className="grid grid-cols-3 gap-4">
-                  {row.fit_reasoning && (
-                    <div>
-                      <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                        Fit reasoning
-                      </h4>
-                      <p className="text-sm text-gray-700">{row.fit_reasoning}</p>
-                    </div>
-                  )}
-                  {row.likely_objection && (
-                    <div>
-                      <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                        Likely objection
-                      </h4>
-                      <p className="text-sm text-gray-700">{row.likely_objection}</p>
-                    </div>
-                  )}
-                  {row.meeting_angle && (
-                    <div>
-                      <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                        Meeting angle
-                      </h4>
-                      <p className="text-sm text-gray-700">{row.meeting_angle}</p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {row.zoom_analysis && row.zoom_analysis.length > 0 && (
-                <div>
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                    Call analysis
-                  </h4>
-                  <div className="grid grid-cols-2 gap-1">
-                    {row.zoom_analysis.map((cat) => (
-                      <div key={cat.category} className="flex items-start gap-2 text-xs">
-                        <span
-                          className={`font-bold mt-0.5 ${
-                            cat.score >= 4
-                              ? "text-green-600"
-                              : cat.score >= 3
-                                ? "text-yellow-600"
-                                : "text-red-500"
-                          }`}
-                        >
-                          {cat.score}/5
-                        </span>
-                        <div>
-                          <span className="font-medium text-gray-700">{cat.category}</span>
-                          {cat.notes && <span className="text-gray-400 ml-1">— {cat.notes}</span>}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+              {hasSalesCallSummary ? (
+                <SalesCallSummary row={row} />
+              ) : (
+                <LegacyCallSummary row={row} />
               )}
 
               {(row.engagement_status === "transcript_pending" || row.transcript_url) &&
-                !row.zoom_analysis && (
+                !row.zoom_analysis &&
+                !hasSalesCallSummary && (
                   <div>
                     <button
                       onClick={(ev) => {
@@ -265,5 +253,236 @@ export default function PipelineRowView({
         </tr>
       )}
     </>
+  );
+}
+
+/** Drawer body for engagements that have post-call structured fields (PR 4 pipeline). */
+function SalesCallSummary({ row }: { row: PipelineRow }) {
+  const facts: Array<[string, string | null]> = [
+    ["Sector", row.sector],
+    ["Geography", row.geography],
+    ["Last revenue", row.last_revenue],
+    ["Last profit", row.last_profit],
+    ["Indicative valuation", row.indicative_valuation],
+  ];
+  const visibleFacts = facts.filter(([, v]) => v != null && v !== "");
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h3 className="text-sm font-semibold text-gray-700">Sales call summary</h3>
+        <div className="flex items-center gap-2">
+          {row.outcome_verdict && (
+            <span
+              className={`text-xs font-medium px-2 py-1 rounded ${VERDICT_COLORS[row.outcome_verdict]}`}
+            >
+              {VERDICT_LABELS[row.outcome_verdict]}
+            </span>
+          )}
+          {row.fit_score != null && (
+            <span
+              className={`text-xs font-bold ${
+                row.fit_score >= 7
+                  ? "text-green-600"
+                  : row.fit_score >= 4
+                    ? "text-yellow-600"
+                    : "text-red-500"
+              }`}
+            >
+              Fit {row.fit_score}/10
+            </span>
+          )}
+          {row.sales_call_doc_url && (
+            <a
+              href={row.sales_call_doc_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(ev) => ev.stopPropagation()}
+              className="text-xs font-medium text-vr-green underline hover:text-vr-green/70"
+            >
+              Full call doc →
+            </a>
+          )}
+        </div>
+      </div>
+
+      {visibleFacts.length > 0 && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-700">
+          {visibleFacts.map(([label, value]) => (
+            <span key={label}>
+              <span className="text-gray-500">{label}: </span>
+              <span className="font-medium">{value}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {row.business_summary && (
+        <div>
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+            Type of business
+          </h4>
+          <p className="text-sm text-gray-700">{row.business_summary}</p>
+        </div>
+      )}
+
+      {row.pain_point && (
+        <div>
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+            Client&rsquo;s ask / pain point
+          </h4>
+          <p className="text-sm text-gray-700">{row.pain_point}</p>
+        </div>
+      )}
+
+      {row.outcome_rationale && (
+        <div>
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+            How it went / next steps
+          </h4>
+          <p className="text-sm text-gray-700">{row.outcome_rationale}</p>
+        </div>
+      )}
+
+      {(row.call_strengths || row.call_improvements) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {row.call_strengths && (
+            <div>
+              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                What went well
+              </h4>
+              <BulletList text={row.call_strengths} />
+            </div>
+          )}
+          {row.call_improvements && (
+            <div>
+              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                What to improve
+              </h4>
+              <BulletList text={row.call_improvements} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {(row.fit_reasoning || row.likely_objection || row.meeting_angle || row.research) && (
+        <details className="text-xs text-gray-500">
+          <summary className="cursor-pointer">Pre-call research (from brief)</summary>
+          <div className="mt-2 space-y-2">
+            {row.research && (
+              <p className="whitespace-pre-wrap text-gray-700">{row.research}</p>
+            )}
+            {row.fit_reasoning && (
+              <p>
+                <span className="text-gray-500">Fit reasoning: </span>
+                <span className="text-gray-700">{row.fit_reasoning}</span>
+              </p>
+            )}
+            {row.likely_objection && (
+              <p>
+                <span className="text-gray-500">Likely objection: </span>
+                <span className="text-gray-700">{row.likely_objection}</span>
+              </p>
+            )}
+            {row.meeting_angle && (
+              <p>
+                <span className="text-gray-500">Meeting angle: </span>
+                <span className="text-gray-700">{row.meeting_angle}</span>
+              </p>
+            )}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+/** Legacy drawer body for engagements without post-call structured fields. */
+function LegacyCallSummary({ row }: { row: PipelineRow }) {
+  return (
+    <div className="space-y-4">
+      {row.research && (
+        <div>
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+            Research
+          </h4>
+          <p className="text-sm text-gray-700 whitespace-pre-wrap">{row.research}</p>
+        </div>
+      )}
+
+      {(row.fit_reasoning || row.likely_objection || row.meeting_angle) && (
+        <div className="grid grid-cols-3 gap-4">
+          {row.fit_reasoning && (
+            <div>
+              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                Fit reasoning
+              </h4>
+              <p className="text-sm text-gray-700">{row.fit_reasoning}</p>
+            </div>
+          )}
+          {row.likely_objection && (
+            <div>
+              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                Likely objection
+              </h4>
+              <p className="text-sm text-gray-700">{row.likely_objection}</p>
+            </div>
+          )}
+          {row.meeting_angle && (
+            <div>
+              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                Meeting angle
+              </h4>
+              <p className="text-sm text-gray-700">{row.meeting_angle}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {row.zoom_analysis && row.zoom_analysis.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+            Call analysis
+          </h4>
+          <div className="grid grid-cols-2 gap-1">
+            {row.zoom_analysis.map((cat) => (
+              <div key={cat.category} className="flex items-start gap-2 text-xs">
+                <span
+                  className={`font-bold mt-0.5 ${
+                    cat.score >= 4
+                      ? "text-green-600"
+                      : cat.score >= 3
+                        ? "text-yellow-600"
+                        : "text-red-500"
+                  }`}
+                >
+                  {cat.score}/5
+                </span>
+                <div>
+                  <span className="font-medium text-gray-700">{cat.category}</span>
+                  {cat.notes && <span className="text-gray-400 ml-1">— {cat.notes}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Render a multi-line string (one item per line, optional leading "- ") as a bullet list. */
+function BulletList({ text }: { text: string }) {
+  const items = text
+    .split(/\n+/)
+    .map((l) => l.replace(/^[-*•]\s*/, "").trim())
+    .filter(Boolean);
+  if (items.length === 0) return null;
+  return (
+    <ul className="list-disc list-inside text-sm text-gray-700 space-y-0.5">
+      {items.map((item, i) => (
+        <li key={i}>{item}</li>
+      ))}
+    </ul>
   );
 }

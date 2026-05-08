@@ -118,7 +118,7 @@ export interface Brief {
   additionalInstruction: string;
 }
 
-export type LeadStatus = "lead" | "correspondence" | "call_booked";
+export type LeadStatus = "lead" | "correspondence" | "call_booked" | "disqualified";
 
 export interface Lead {
   id: string;
@@ -141,7 +141,8 @@ export type EngagementFunnelStatus =
   | "no_show"
   | "won"
   | "proposal_sent"
-  | "lost";
+  | "lost"
+  | "disqualified";
 
 export type OutcomeVerdict = "win" | "potential_win" | "likely_loss" | "loss";
 
