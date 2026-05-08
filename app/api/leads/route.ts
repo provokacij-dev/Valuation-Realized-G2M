@@ -41,11 +41,23 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, status } = body as { id: string; status: LeadStatus };
+    const { id, status, actions_to_take } = body as {
+      id: string;
+      status?: LeadStatus;
+      actions_to_take?: string | null;
+    };
+
+    const updates: { status?: LeadStatus; actions_to_take?: string | null } = {};
+    if (status !== undefined) updates.status = status;
+    if (actions_to_take !== undefined) updates.actions_to_take = actions_to_take;
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: "No fields to update" }, { status: 400 });
+    }
 
     const { error } = await supabase
       .from("leads")
-      .update({ status })
+      .update(updates)
       .eq("id", id);
 
     if (error) throw error;

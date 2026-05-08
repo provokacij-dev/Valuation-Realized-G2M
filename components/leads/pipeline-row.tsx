@@ -64,6 +64,7 @@ interface Props {
   isExpanded: boolean;
   onToggle: () => void;
   onStatusChange: (row: PipelineRow, next: PipelineStatus) => Promise<void>;
+  onActionsToTakeChange: (row: PipelineRow, next: string | null) => Promise<void>;
   onAnalyse: (id: string) => Promise<void>;
   onDelete: (row: PipelineRow) => Promise<void>;
   analysing: boolean;
@@ -76,6 +77,7 @@ export default function PipelineRowView({
   isExpanded,
   onToggle,
   onStatusChange,
+  onActionsToTakeChange,
   onAnalyse,
   onDelete,
   analysing,
@@ -100,6 +102,13 @@ export default function PipelineRowView({
     await onDelete(row);
   }
 
+  async function handleActionsBlur(ev: React.FocusEvent<HTMLTextAreaElement>) {
+    const next = ev.target.value.trim();
+    const current = row.actions_to_take ?? "";
+    if (next === current) return;
+    await onActionsToTakeChange(row, next === "" ? null : next);
+  }
+
   return (
     <>
       <tr
@@ -110,6 +119,18 @@ export default function PipelineRowView({
           {row.name ?? "—"}
         </td>
         <td className="py-3 pr-4 text-gray-600">{row.email}</td>
+        <td className="py-3 pr-4">
+          <textarea
+            key={`${row.source_id}-${row.actions_to_take ?? ""}`}
+            defaultValue={row.actions_to_take ?? ""}
+            onClick={(ev) => ev.stopPropagation()}
+            onBlur={handleActionsBlur}
+            placeholder="Next steps…"
+            rows={2}
+            disabled={updating || deleting}
+            className="w-44 text-xs border border-gray-200 rounded px-1.5 py-1 resize-none focus:border-vr-green focus:outline-none disabled:opacity-50"
+          />
+        </td>
         <td className="py-3 pr-4">
           <select
             value={row.status}
@@ -224,7 +245,7 @@ export default function PipelineRowView({
 
       {isExpanded && canExpand && (
         <tr>
-          <td colSpan={10} className="pb-4 pt-0">
+          <td colSpan={11} className="pb-4 pt-0">
             <div className="bg-gray-50 rounded-xl p-4 mx-2 space-y-4">
               {hasSalesCallSummary ? (
                 <SalesCallSummary row={row} />

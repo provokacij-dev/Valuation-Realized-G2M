@@ -133,6 +133,7 @@ export interface Lead {
   utm_content: string | null;
   status: LeadStatus;
   brevo_list_id: number | null;
+  actions_to_take: string | null;
   created_at: string;
 }
 
@@ -186,6 +187,7 @@ export interface Engagement {
   outcome_rationale: string | null;
   call_strengths: string | null;
   call_improvements: string | null;
+  actions_to_take: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -201,6 +203,7 @@ export interface PipelineRow {
   utm_term: string | null;
   utm_content: string | null;
   created_at: string;
+  actions_to_take: string | null;
   // engagement-only (null for lead rows)
   scheduled_at: string | null;
   fit_score: number | null;

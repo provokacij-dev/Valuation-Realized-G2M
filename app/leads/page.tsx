@@ -94,6 +94,30 @@ export default function LeadsPage() {
     }
   }
 
+  async function handleActionsToTakeChange(row: PipelineRow, next: string | null) {
+    setUpdatingId(row.source_id);
+    try {
+      const endpoint = row.source === "lead" ? "/api/leads" : "/api/engagements";
+      const res = await fetch(endpoint, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: row.source_id, actions_to_take: next }),
+      });
+      if (!res.ok) throw new Error("Failed to save next steps");
+      // Patch local state in place — no full reload, so the textarea
+      // doesn't lose focus context for adjacent rows.
+      setRows((prev) =>
+        prev.map((r) =>
+          r.source_id === row.source_id ? { ...r, actions_to_take: next } : r
+        )
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
   async function handleDelete(row: PipelineRow) {
     setDeletingId(row.source_id);
     try {
@@ -217,6 +241,7 @@ export default function LeadsPage() {
                   <tr className="border-b border-gray-200">
                     <th className="text-left py-3 pr-4 font-medium text-gray-500">Name</th>
                     <th className="text-left py-3 pr-4 font-medium text-gray-500">Email</th>
+                    <th className="text-left py-3 pr-4 font-medium text-gray-500">Actions to take</th>
                     <th className="text-left py-3 pr-4 font-medium text-gray-500">Status</th>
                     <th className="text-left py-3 pr-4 font-medium text-gray-500">Scheduled</th>
                     <th className="text-center py-3 pr-4 font-medium text-gray-500">Fit</th>
@@ -239,6 +264,7 @@ export default function LeadsPage() {
                         )
                       }
                       onStatusChange={handleStatusChange}
+                      onActionsToTakeChange={handleActionsToTakeChange}
                       onAnalyse={handleAnalyse}
                       onDelete={handleDelete}
                       analysing={analysingId === row.source_id}
