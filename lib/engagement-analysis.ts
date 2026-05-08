@@ -1,90 +1,118 @@
 import { supabase } from "./supabase";
 import { getAnthropicClient } from "./anthropic";
-import { appendFormattedAnalysis } from "./google-docs";
+import { createSalesCallDoc, type SalesCallContent } from "./google-docs";
 import { getZoomToken } from "./zoom";
 import { sendTransactionalEmail } from "./brevo";
-import type { ZoomAnalysisCategory } from "@/types";
 
-// 31-category Zoom call analysis framework.
-const ZOOM_CATEGORIES = [
-  "Opening & rapport",
-  "Agenda setting",
-  "Discovery — business context",
-  "Discovery — financial situation",
-  "Discovery — motivations & goals",
-  "Discovery — timeline & urgency",
-  "Discovery — deal experience",
-  "Objection — price / valuation expectations",
-  "Objection — timing",
-  "Objection — competitor comparison",
-  "Objection — trust / credibility",
-  "Objection — process concerns",
-  "Pitch — value proposition clarity",
-  "Pitch — differentiation",
-  "Pitch — social proof / case studies",
-  "Pitch — process explanation",
-  "Pitch — fee structure discussion",
-  "Engagement — active listening",
-  "Engagement — question quality",
-  "Engagement — energy & enthusiasm",
-  "Engagement — empathy",
-  "Next steps — clear CTA",
-  "Next steps — timeline agreed",
-  "Next steps — follow-up committed",
-  "Red flags identified",
-  "Deal qualification",
-  "ICP alignment",
-  "Relationship depth",
-  "Buying signals",
-  "Closing technique",
-  "Overall call quality",
-] as const;
+// Human-readable labels for the four allowed AI verdict values.
+const VERDICT_LABELS: Record<string, string> = {
+  win: "Win",
+  potential_win: "Potential win",
+  likely_loss: "Likely loss",
+  loss: "Loss",
+};
 
-function buildAnalysisPrompt(transcript: string): string {
-  const categoriesList = ZOOM_CATEGORIES.map((c, i) => `${i + 1}. ${c}`).join("\n");
-  return `You are an expert M&A sales coach reviewing a discovery/sales call transcript for Valuation Realized (an M&A advisory for SME founders).
+function buildSalesCallPrompt(transcript: string, priorResearch?: string | null): string {
+  const researchBlock = priorResearch
+    ? `\nPRIOR RESEARCH ON THIS PROSPECT (from pre-call brief — useful for sector/geography/business_summary; do NOT use it for revenue or profit figures):\n${priorResearch.slice(0, 3000)}\n`
+    : "";
 
-Analyse this call across these 31 categories:
-${categoriesList}
+  return `You are a senior M&A advisor at Valuation Realized analysing a discovery call transcript with a prospect SME founder.${researchBlock}
 
-For each category, provide:
-- score: 1-5 (1=poor, 3=adequate, 5=excellent)
-- notes: 1-2 sentence specific observation
+CALL TRANSCRIPT:
+${transcript.slice(0, 50000)}
 
-Also provide an overall_score (1-100) and top 3 coaching insights.
+Produce a structured post-call analysis as JSON. Follow these field rules strictly.
 
-Return ONLY valid JSON in this exact format:
+EXTRACT FACTS:
+- sector: industry the business operates in. Use transcript first; fall back to prior research if needed.
+- geography: primary country/region. Use transcript first; fall back to prior research.
+- last_revenue: most recent annual revenue MENTIONED IN THE TRANSCRIPT (e.g. "$8M FY2024", "EUR 12M ARR"). NULL if not stated in the transcript. DO NOT infer or pull from prior research.
+- last_profit: EBITDA / net profit / margin MENTIONED IN THE TRANSCRIPT. NULL if not stated. DO NOT infer or pull from prior research.
+- indicative_valuation: any valuation discussed IN THE TRANSCRIPT — absolute, range, or multiple (e.g. "$20-30M", "5-7x EBITDA"). NULL if not discussed.
+- business_summary: 1-2 sentences plainly describing what the business does. Transcript first; supplement with prior research if needed.
+- pain_point: founder's ask or core pain point in their own words from the transcript (1-2 sentences).
+
+OUTCOME VERDICT (judge from transcript only — pick exactly one):
+- "win" — payment was committed/made on the call
+- "potential_win" — strong willingness expressed but no payment yet
+- "likely_loss" — soft objections (think about it, too expensive, timing)
+- "loss" — hard pass, not the right offering, or no fit signals
+
+Plus a 1-line outcome_rationale citing specific transcript moments.
+
+CALL ANALYSIS:
+- call_strengths: 2-4 bullets about what Vaiga did well (discovery, framing, listening, etc.). Plain text, one bullet per line, prefixed with "- ".
+- call_improvements: 2-4 bullets about what Vaiga could have done better. Same format.
+
+OUTPUT EXACTLY THIS JSON (no preamble, no trailing prose, no markdown fencing):
 {
-  "overall_score": <number 1-100>,
-  "coaching_insights": ["insight1", "insight2", "insight3"],
-  "categories": [
-    {"category": "<name>", "score": <1-5>, "notes": "<observation>"},
-    ...
-  ]
+  "sector": "...",
+  "geography": "...",
+  "last_revenue": "...",
+  "last_profit": "...",
+  "indicative_valuation": "...",
+  "business_summary": "...",
+  "pain_point": "...",
+  "outcome_verdict": "win|potential_win|likely_loss|loss",
+  "outcome_rationale": "...",
+  "call_strengths": "- bullet 1\\n- bullet 2",
+  "call_improvements": "- bullet 1\\n- bullet 2"
+}`;
 }
 
-TRANSCRIPT:
-${transcript.slice(0, 50000)}`;
+type ExtractedFacts = {
+  sector: string | null;
+  geography: string | null;
+  last_revenue: string | null;
+  last_profit: string | null;
+  indicative_valuation: string | null;
+  business_summary: string | null;
+  pain_point: string | null;
+  outcome_verdict: "win" | "potential_win" | "likely_loss" | "loss" | null;
+  outcome_rationale: string | null;
+  call_strengths: string | null;
+  call_improvements: string | null;
+};
+
+const EMPTY_FACTS: ExtractedFacts = {
+  sector: null,
+  geography: null,
+  last_revenue: null,
+  last_profit: null,
+  indicative_valuation: null,
+  business_summary: null,
+  pain_point: null,
+  outcome_verdict: null,
+  outcome_rationale: null,
+  call_strengths: null,
+  call_improvements: null,
+};
+
+function isVerdict(v: unknown): v is "win" | "potential_win" | "likely_loss" | "loss" {
+  return v === "win" || v === "potential_win" || v === "likely_loss" || v === "loss";
 }
 
 export type AnalysisResult = {
   success: boolean;
-  zoom_score: number | null;
-  zoom_analysis: ZoomAnalysisCategory[] | null;
-  coaching_insights: string[];
+  sales_call_doc_url: string | null;
+  outcome_verdict: ExtractedFacts["outcome_verdict"];
   error?: string;
 };
 
 /**
- * Full post-call analysis pipeline for a single engagement:
- * download transcript from Zoom → run Claude 31-category scorecard →
- * update Supabase → append formatted analysis to the brief Google Doc →
- * send Brevo notification. All side effects are non-fatal (errors logged
- * but do not abort subsequent steps).
+ * Post-call analysis pipeline for a single engagement:
+ *   download transcript from Zoom
+ *   → run Claude post-call extraction (business summary + verdict + coaching)
+ *   → create a NEW Google Doc in the Sales calls folder (3-block layout)
+ *   → update Supabase engagement row with extracted fields and doc URL
+ *   → send Brevo notification email
  *
- * Called synchronously by the manual /api/engagements/[id]/analyse endpoint
- * (user-clicked "Analyse" button) and asynchronously by the Zoom webhook via
- * waitUntil when a recording.completed event lands.
+ * All side effects after the analysis are non-fatal (errors logged but the
+ * subsequent steps still attempt to run).
+ *
+ * Called both by the manual /api/engagements/[id]/analyse endpoint and by the
+ * Zoom webhook via waitUntil after a recording.completed event.
  */
 export async function runEngagementAnalysis(engagementId: string): Promise<AnalysisResult> {
   // 1. Fetch engagement
@@ -95,142 +123,154 @@ export async function runEngagementAnalysis(engagementId: string): Promise<Analy
     .single();
 
   if (fetchErr || !engagement) {
-    return {
-      success: false,
-      zoom_score: null,
-      zoom_analysis: null,
-      coaching_insights: [],
-      error: "Engagement not found",
-    };
+    return { success: false, sales_call_doc_url: null, outcome_verdict: null, error: "Engagement not found" };
   }
 
   if (!engagement.transcript_url) {
-    return {
-      success: false,
-      zoom_score: null,
-      zoom_analysis: null,
-      coaching_insights: [],
-      error: "No transcript URL on this engagement",
-    };
+    return { success: false, sales_call_doc_url: null, outcome_verdict: null, error: "No transcript URL on this engagement" };
   }
 
-  // 2. Download transcript from Zoom (retry once on 401).
+  // 2. Download transcript from Zoom (retry once on 401, in case the Server-to-Server token
+  //    expired between webhook receipt and analysis run).
   let transcript: string;
   try {
     let token = await getZoomToken();
     let res = await fetch(engagement.transcript_url, {
       headers: { Authorization: `Bearer ${token}` },
     });
-
     if (res.status === 401) {
       token = await getZoomToken();
       res = await fetch(engagement.transcript_url, {
         headers: { Authorization: `Bearer ${token}` },
       });
     }
-
     if (!res.ok) {
       await supabase
         .from("engagements")
         .update({ status: "transcript_failed", updated_at: new Date().toISOString() })
         .eq("id", engagementId);
-      return {
-        success: false,
-        zoom_score: null,
-        zoom_analysis: null,
-        coaching_insights: [],
-        error: "Failed to download transcript",
-      };
+      return { success: false, sales_call_doc_url: null, outcome_verdict: null, error: "Failed to download transcript" };
     }
-
     transcript = await res.text();
   } catch (err) {
     console.error("Transcript download error:", err);
-    return {
-      success: false,
-      zoom_score: null,
-      zoom_analysis: null,
-      coaching_insights: [],
-      error: "Transcript download failed",
-    };
+    return { success: false, sales_call_doc_url: null, outcome_verdict: null, error: "Transcript download failed" };
   }
 
-  // 3. Claude 31-category analysis.
-  let zoomScore: number | null = null;
-  let zoomAnalysis: ZoomAnalysisCategory[] | null = null;
-  let coachingInsights: string[] = [];
-
+  // 3. Claude post-call extraction.
+  let facts: ExtractedFacts = { ...EMPTY_FACTS };
   try {
     const client = getAnthropicClient();
     const res = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 4096,
-      messages: [{ role: "user", content: buildAnalysisPrompt(transcript) }],
+      messages: [{ role: "user", content: buildSalesCallPrompt(transcript, engagement.research) }],
     });
-
     const text = res.content[0].type === "text" ? res.content[0].text : "{}";
     const cleanText = text.replace(/^```json\n?|\n?```$/g, "").trim();
     const parsed = JSON.parse(cleanText);
-
-    zoomScore = parsed.overall_score ?? null;
-    zoomAnalysis = parsed.categories ?? null;
-    coachingInsights = parsed.coaching_insights ?? [];
+    facts = {
+      sector: parsed.sector ?? null,
+      geography: parsed.geography ?? null,
+      last_revenue: parsed.last_revenue ?? null,
+      last_profit: parsed.last_profit ?? null,
+      indicative_valuation: parsed.indicative_valuation ?? null,
+      business_summary: parsed.business_summary ?? null,
+      pain_point: parsed.pain_point ?? null,
+      outcome_verdict: isVerdict(parsed.outcome_verdict) ? parsed.outcome_verdict : null,
+      outcome_rationale: parsed.outcome_rationale ?? null,
+      call_strengths: parsed.call_strengths ?? null,
+      call_improvements: parsed.call_improvements ?? null,
+    };
   } catch (err) {
-    console.error("Claude analysis error:", err);
-    // Continue with whatever we have so Supabase gets at least status=completed.
+    console.error("Claude analysis error (non-fatal):", err);
   }
 
-  // 4. Update engagement record.
+  // 4. Create new Sales Call doc in GOOGLE_CONDUCTEDSALES_CALLS_FOLDER_ID.
+  let salesCallDocUrl: string | null = null;
+  let salesCallDocId: string | null = null;
+  try {
+    const callDate = new Date(engagement.scheduled_at ?? engagement.created_at);
+    const docTitle = `Sales call — ${engagement.name ?? engagement.email} — ${callDate.toLocaleDateString()}`;
+    const verdictLabel = facts.outcome_verdict ? (VERDICT_LABELS[facts.outcome_verdict] ?? facts.outcome_verdict) : null;
+    const content: SalesCallContent = {
+      meta: {
+        name: engagement.name,
+        email: engagement.email,
+        callDateDisplay: callDate.toLocaleString(),
+      },
+      businessSummary: {
+        sector: facts.sector,
+        geography: facts.geography,
+        lastRevenue: facts.last_revenue,
+        lastProfit: facts.last_profit,
+        indicativeValuation: facts.indicative_valuation,
+        summary: facts.business_summary,
+        painPoint: facts.pain_point,
+        outcomeVerdict: verdictLabel,
+        outcomeRationale: facts.outcome_rationale,
+      },
+      callAnalysis: {
+        strengths: facts.call_strengths,
+        improvements: facts.call_improvements,
+      },
+      transcript,
+    };
+    const url = await createSalesCallDoc(docTitle, content);
+    salesCallDocUrl = url;
+    const match = url.match(/\/document\/d\/([a-zA-Z0-9_-]+)/);
+    salesCallDocId = match ? match[1] : null;
+  } catch (err) {
+    console.error("Sales call doc creation error (non-fatal):", err);
+  }
+
+  // 5. Update engagement row with extracted facts + doc references.
   await supabase
     .from("engagements")
     .update({
       status: "completed",
-      zoom_score: zoomScore,
-      zoom_analysis: zoomAnalysis,
+      sales_call_doc_url: salesCallDocUrl,
+      sales_call_doc_id: salesCallDocId,
+      sector: facts.sector,
+      geography: facts.geography,
+      last_revenue: facts.last_revenue,
+      last_profit: facts.last_profit,
+      indicative_valuation: facts.indicative_valuation,
+      business_summary: facts.business_summary,
+      pain_point: facts.pain_point,
+      outcome_verdict: facts.outcome_verdict,
+      outcome_rationale: facts.outcome_rationale,
+      call_strengths: facts.call_strengths,
+      call_improvements: facts.call_improvements,
       updated_at: new Date().toISOString(),
     })
     .eq("id", engagementId);
 
-  // 5. Append formatted analysis section to the Google Doc (non-fatal).
-  if (engagement.brief_doc_id && zoomAnalysis) {
-    try {
-      await appendFormattedAnalysis(engagement.brief_doc_id, {
-        overallScore: zoomScore,
-        insights: coachingInsights,
-        categories: zoomAnalysis,
-      });
-    } catch (err) {
-      console.error("Doc append error (non-fatal):", err);
-    }
-  }
-
   // 6. Brevo notification (non-fatal).
-  const vaigaEmail = process.env.NOTIFICATION_EMAIL ?? "vaiga@valuationrealized.com";
-  if (zoomScore !== null) {
-    try {
-      await sendTransactionalEmail({
-        to: vaigaEmail,
-        subject: `Call analysis ready: ${engagement.name ?? engagement.email} — ${zoomScore}/100`,
-        htmlContent: `
-          <h2>Zoom Call Analysis</h2>
-          <p><strong>${engagement.name ?? engagement.email}</strong></p>
-          <p><strong>Overall score: ${zoomScore}/100</strong></p>
-          ${coachingInsights.length > 0 ? `
-          <h3>Top Insights</h3>
-          <ol>${coachingInsights.map((i) => `<li>${i}</li>`).join("")}</ol>
-          ` : ""}
-          ${engagement.brief_doc_url ? `<p><a href="${engagement.brief_doc_url}">Open Full Brief →</a></p>` : ""}
-        `,
-      });
-    } catch (err) {
-      console.error("Brevo notify error (non-fatal):", err);
-    }
+  const vaigaEmail = process.env.NOTIFICATION_EMAIL ?? "vr@valuationrealized.com";
+  try {
+    const verdictLabel = facts.outcome_verdict ? (VERDICT_LABELS[facts.outcome_verdict] ?? facts.outcome_verdict) : "Verdict unknown";
+    await sendTransactionalEmail({
+      to: vaigaEmail,
+      subject: `Sales call analysis: ${engagement.name ?? engagement.email} — ${verdictLabel}`,
+      htmlContent: `
+        <h2>Sales Call Analysis</h2>
+        <p><strong>${engagement.name ?? engagement.email}</strong></p>
+        ${salesCallDocUrl ? `<p><strong><a href="${salesCallDocUrl}">Open Sales Call Doc →</a></strong></p>` : ""}
+        ${facts.business_summary ? `<p><strong>Business:</strong> ${facts.business_summary}</p>` : ""}
+        ${facts.pain_point ? `<p><strong>Pain point / ask:</strong> ${facts.pain_point}</p>` : ""}
+        <p><strong>Outcome:</strong> ${verdictLabel}${facts.outcome_rationale ? ` — ${facts.outcome_rationale}` : ""}</p>
+        ${facts.call_strengths ? `<h3>What went well</h3><pre style="white-space:pre-wrap;font-family:inherit;margin:0;">${facts.call_strengths}</pre>` : ""}
+        ${facts.call_improvements ? `<h3>What to improve</h3><pre style="white-space:pre-wrap;font-family:inherit;margin:0;">${facts.call_improvements}</pre>` : ""}
+      `,
+    });
+  } catch (err) {
+    console.error("Brevo notify error (non-fatal):", err);
   }
 
   return {
     success: true,
-    zoom_score: zoomScore,
-    zoom_analysis: zoomAnalysis,
-    coaching_insights: coachingInsights,
+    sales_call_doc_url: salesCallDocUrl,
+    outcome_verdict: facts.outcome_verdict,
   };
 }
