@@ -216,15 +216,13 @@ export default function LeadsPage() {
                   <tr className="border-b border-gray-200">
                     <th className="text-left py-3 pr-4 font-medium text-gray-500">Name</th>
                     <th className="text-left py-3 pr-4 font-medium text-gray-500">Email</th>
-                    <th className="text-left py-3 pr-4 font-medium text-gray-500">UTMs</th>
                     <th className="text-left py-3 pr-4 font-medium text-gray-500">Status</th>
                     <th className="text-left py-3 pr-4 font-medium text-gray-500">Scheduled</th>
                     <th className="text-center py-3 pr-4 font-medium text-gray-500">Fit</th>
                     <th className="text-center py-3 pr-4 font-medium text-gray-500">Call</th>
                     <th className="text-left py-3 pr-4 font-medium text-gray-500">Brief</th>
-                    <th className="text-right py-3 pr-3 font-medium text-gray-500 w-20">
-                      Actions
-                    </th>
+                    <th className="text-right py-3 pr-3 font-medium text-gray-500 w-20" />
+                    <th className="text-left py-3 pr-4 font-medium text-gray-500">UTMs</th>
                     <th className="py-3 w-6" />
                   </tr>
                 </thead>
