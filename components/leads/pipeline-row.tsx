@@ -79,9 +79,6 @@ export default function PipelineRowView({
           {row.name ?? "—"}
         </td>
         <td className="py-3 pr-4 text-gray-600">{row.email}</td>
-        <td className="py-3 pr-4 text-xs text-gray-400">
-          {[row.utm_term, row.utm_content].filter(Boolean).join(" / ") || "—"}
-        </td>
         <td className="py-3 pr-4">
           <select
             value={row.status}
@@ -164,6 +161,9 @@ export default function PipelineRowView({
           >
             {deleting ? "…" : "Delete"}
           </button>
+        </td>
+        <td className="py-3 pr-4 text-xs text-gray-400">
+          {[row.utm_term, row.utm_content].filter(Boolean).join(" / ") || "—"}
         </td>
         <td className="py-3 text-gray-400 w-6">
           {canExpand ? (
