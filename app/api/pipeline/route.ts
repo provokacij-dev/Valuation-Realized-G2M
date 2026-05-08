@@ -50,6 +50,18 @@ export async function GET() {
         research: e.research,
         engagement_status: e.status,
         transcript_url: e.transcript_url,
+        sales_call_doc_url: e.sales_call_doc_url,
+        sector: e.sector,
+        geography: e.geography,
+        last_revenue: e.last_revenue,
+        last_profit: e.last_profit,
+        indicative_valuation: e.indicative_valuation,
+        business_summary: e.business_summary,
+        pain_point: e.pain_point,
+        outcome_verdict: e.outcome_verdict,
+        outcome_rationale: e.outcome_rationale,
+        call_strengths: e.call_strengths,
+        call_improvements: e.call_improvements,
       });
     }
 
@@ -75,6 +87,18 @@ export async function GET() {
         research: null,
         engagement_status: null,
         transcript_url: null,
+        sales_call_doc_url: null,
+        sector: null,
+        geography: null,
+        last_revenue: null,
+        last_profit: null,
+        indicative_valuation: null,
+        business_summary: null,
+        pain_point: null,
+        outcome_verdict: null,
+        outcome_rationale: null,
+        call_strengths: null,
+        call_improvements: null,
       });
     }
 
