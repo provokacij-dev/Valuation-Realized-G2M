@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { listSalesCallDocs, findSalesCallDocByName } from "@/lib/google-drive";
 import type { PipelineRow, Lead, Engagement } from "@/types";
 
 export async function GET() {
   try {
-    const [leadsRes, engagementsRes] = await Promise.all([
+    const [leadsRes, engagementsRes, salesCallDocs] = await Promise.all([
       supabase.from("leads").select("*"),
       supabase.from("engagements").select("*"),
+      listSalesCallDocs(),
     ]);
 
     if (leadsRes.error) throw leadsRes.error;
@@ -30,6 +32,13 @@ export async function GET() {
 
     for (const e of engagements) {
       const matchingLead = leadsByEmail.get(e.email.toLowerCase());
+      // If the engagement already has a doc URL (from the Zoom-driven pipeline),
+      // use it. Otherwise try a name-match against the Sales calls folder.
+      const fallbackDoc = e.sales_call_doc_url
+        ? null
+        : findSalesCallDocByName(salesCallDocs, e.name);
+      const salesCallDocUrl = e.sales_call_doc_url ?? fallbackDoc?.webViewLink ?? null;
+
       rows.push({
         source: "engagement",
         source_id: e.id,
@@ -51,7 +60,7 @@ export async function GET() {
         research: e.research,
         engagement_status: e.status,
         transcript_url: e.transcript_url,
-        sales_call_doc_url: e.sales_call_doc_url,
+        sales_call_doc_url: salesCallDocUrl,
         sector: e.sector,
         geography: e.geography,
         last_revenue: e.last_revenue,

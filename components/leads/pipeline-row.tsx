@@ -115,23 +115,11 @@ export default function PipelineRowView({
         className={canExpand ? "hover:bg-gray-50 cursor-pointer" : "hover:bg-gray-50"}
         onClick={canExpand ? onToggle : undefined}
       >
-        <td className="py-3 pr-4 font-medium text-gray-900">
+        <td className="py-3 pr-4 font-medium text-gray-900 align-top">
           {row.name ?? "—"}
         </td>
-        <td className="py-3 pr-4 text-gray-600">{row.email}</td>
-        <td className="py-3 pr-4">
-          <textarea
-            key={`${row.source_id}-${row.actions_to_take ?? ""}`}
-            defaultValue={row.actions_to_take ?? ""}
-            onClick={(ev) => ev.stopPropagation()}
-            onBlur={handleActionsBlur}
-            placeholder="Next steps…"
-            rows={2}
-            disabled={updating || deleting}
-            className="w-44 text-xs border border-gray-200 rounded px-1.5 py-1 resize-none focus:border-vr-green focus:outline-none disabled:opacity-50"
-          />
-        </td>
-        <td className="py-3 pr-4">
+        <td className="py-3 pr-4 text-gray-600 align-top">{row.email}</td>
+        <td className="py-3 pr-4 align-top">
           <select
             value={row.status}
             disabled={updating || deleting}
@@ -151,12 +139,24 @@ export default function PipelineRowView({
             ))}
           </select>
         </td>
-        <td className="py-3 pr-4 text-gray-500 text-xs">
+        <td className="py-3 pr-4 align-top">
+          <textarea
+            key={`${row.source_id}-${row.actions_to_take ?? ""}`}
+            defaultValue={row.actions_to_take ?? ""}
+            onClick={(ev) => ev.stopPropagation()}
+            onBlur={handleActionsBlur}
+            placeholder="Next steps, follow-ups, last email…"
+            rows={3}
+            disabled={updating || deleting}
+            className="w-72 text-sm border border-gray-300 rounded-md px-2.5 py-2 leading-snug resize-y bg-white shadow-sm placeholder-gray-400 transition-colors focus:border-vr-green focus:ring-1 focus:ring-vr-green focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+          />
+        </td>
+        <td className="py-3 pr-4 text-gray-500 text-xs align-top">
           {row.scheduled_at
             ? new Date(row.scheduled_at).toLocaleDateString()
             : "—"}
         </td>
-        <td className="py-3 pr-4 text-center">
+        <td className="py-3 pr-4 text-center align-top">
           {row.fit_score != null ? (
             <span
               className={`text-sm font-bold ${
@@ -173,7 +173,7 @@ export default function PipelineRowView({
             "—"
           )}
         </td>
-        <td className="py-3 pr-4 text-center text-xs">
+        <td className="py-3 pr-4 text-center text-xs align-top">
           {row.sales_call_doc_url ? (
             <div className="flex flex-col items-center gap-1">
               <a
@@ -209,7 +209,7 @@ export default function PipelineRowView({
             "—"
           )}
         </td>
-        <td className="py-3 pr-4 text-xs text-gray-500">
+        <td className="py-3 pr-4 text-xs text-gray-500 align-top">
           {row.brief_doc_url ? (
             <a
               href={row.brief_doc_url}
@@ -224,7 +224,7 @@ export default function PipelineRowView({
             "—"
           )}
         </td>
-        <td className="py-3 pr-3 text-right">
+        <td className="py-3 pr-3 text-right align-top">
           <button
             onClick={handleDeleteClick}
             disabled={deleting || updating}
@@ -233,10 +233,10 @@ export default function PipelineRowView({
             {deleting ? "…" : "Delete"}
           </button>
         </td>
-        <td className="py-3 pr-4 text-xs text-gray-400">
+        <td className="py-3 pr-4 text-xs text-gray-400 align-top">
           {[row.utm_term, row.utm_content].filter(Boolean).join(" / ") || "—"}
         </td>
-        <td className="py-3 text-gray-400 w-6">
+        <td className="py-3 text-gray-400 w-6 align-top">
           {canExpand ? (
             <span className="text-xs">{isExpanded ? "▲" : "▼"}</span>
           ) : null}
@@ -288,6 +288,16 @@ function SalesCallSummary({ row }: { row: PipelineRow }) {
   ];
   const visibleFacts = facts.filter(([, v]) => v != null && v !== "");
 
+  // If we have a doc URL but none of the AI fields are populated, this is
+  // probably a name-matched legacy doc. Tell the user to read the doc.
+  const onlyDocLink =
+    row.sales_call_doc_url != null &&
+    !row.business_summary &&
+    !row.sector &&
+    !row.outcome_verdict &&
+    !row.call_strengths &&
+    !row.call_improvements;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -326,6 +336,12 @@ function SalesCallSummary({ row }: { row: PipelineRow }) {
           )}
         </div>
       </div>
+
+      {onlyDocLink && (
+        <p className="text-xs text-gray-500 italic">
+          Matched a sales call doc by name. Open the doc above for the full summary.
+        </p>
+      )}
 
       {visibleFacts.length > 0 && (
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-700">
