@@ -311,20 +311,20 @@ export type SalesCallContent = {
 };
 
 /**
- * Create a new Google Doc in GOOGLE_SALES_CALLS_FOLDER_ID with the post-call
+ * Create a new Google Doc in GOOGLE_CONDUCTEDSALES_CALLS_FOLDER_ID with the post-call
  * sales-call structure (business summary on top, call analysis in the middle,
  * full transcript at the bottom). HEADING_1 title, HEADING_2 sections,
  * HEADING_3 sub-sections.
  *
- * Returns the public Doc URL. Throws if GOOGLE_SALES_CALLS_FOLDER_ID is unset
+ * Returns the public Doc URL. Throws if GOOGLE_CONDUCTEDSALES_CALLS_FOLDER_ID is unset
  * or if the OAuth user lacks editor access on the folder.
  */
 export async function createSalesCallDoc(
   title: string,
   content: SalesCallContent,
 ): Promise<string> {
-  const folderId = process.env.GOOGLE_SALES_CALLS_FOLDER_ID;
-  if (!folderId) throw new Error("GOOGLE_SALES_CALLS_FOLDER_ID not configured");
+  const folderId = process.env.GOOGLE_CONDUCTEDSALES_CALLS_FOLDER_ID;
+  if (!folderId) throw new Error("GOOGLE_CONDUCTEDSALES_CALLS_FOLDER_ID not configured");
 
   const auth = getAuth();
   const docs = google.docs({ version: "v1", auth });

@@ -186,7 +186,7 @@ export async function runEngagementAnalysis(engagementId: string): Promise<Analy
     console.error("Claude analysis error (non-fatal):", err);
   }
 
-  // 4. Create new Sales Call doc in GOOGLE_SALES_CALLS_FOLDER_ID.
+  // 4. Create new Sales Call doc in GOOGLE_CONDUCTEDSALES_CALLS_FOLDER_ID.
   let salesCallDocUrl: string | null = null;
   let salesCallDocId: string | null = null;
   try {
