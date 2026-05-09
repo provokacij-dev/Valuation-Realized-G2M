@@ -76,7 +76,8 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Leads update error:", error);
-    return NextResponse.json({ error: "Failed to update lead" }, { status: 500 });
+    const detail = error instanceof Error ? error.message : JSON.stringify(error);
+    return NextResponse.json({ error: "Failed to update lead", detail }, { status: 500 });
   }
 }
 
