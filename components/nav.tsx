@@ -36,7 +36,7 @@ export default function Nav() {
       <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
         <span className="font-semibold text-base tracking-tight">
           <span className="text-vr-gold">Valuation Realized</span>
-          <span className="text-white/60 ml-2 text-sm font-normal">Ads Platform</span>
+          <span className="text-white/60 ml-2 text-sm font-normal">G2M and CRM</span>
         </span>
 
         <div className="flex items-center gap-1">

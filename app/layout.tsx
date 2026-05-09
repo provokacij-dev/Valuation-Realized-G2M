@@ -3,8 +3,8 @@ import "./globals.css";
 import Nav from "@/components/nav";
 
 export const metadata: Metadata = {
-  title: "VR Ads Platform",
-  description: "Valuation Realized — Internal Ads Management Platform",
+  title: "VR G2M and CRM",
+  description: "Valuation Realized G2M and CRM",
 };
 
 export default function RootLayout({
