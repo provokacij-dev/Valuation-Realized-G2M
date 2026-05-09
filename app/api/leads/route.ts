@@ -54,7 +54,6 @@ export async function PATCH(request: NextRequest) {
       actions_to_take?: string | null;
       utm_term?: string | null;
       utm_content?: string | null;
-      updated_at?: string;
     } = {};
     if (status !== undefined) updates.status = status;
     if (actions_to_take !== undefined) updates.actions_to_take = actions_to_take;
@@ -65,8 +64,6 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });
     }
 
-    updates.updated_at = new Date().toISOString();
-
     const { error } = await supabase
       .from("leads")
       .update(updates)
@@ -76,8 +73,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Leads update error:", error);
-    const detail = error instanceof Error ? error.message : JSON.stringify(error);
-    return NextResponse.json({ error: "Failed to update lead", detail }, { status: 500 });
+    return NextResponse.json({ error: "Failed to update lead" }, { status: 500 });
   }
 }
 
