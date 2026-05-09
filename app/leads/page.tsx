@@ -24,6 +24,17 @@ const FILTER_STATUSES: PipelineStatus[] = [
 
 const LEAD_STATUSES = new Set<PipelineStatus>(["lead", "correspondence"]);
 
+const CALL_STATUSES = new Set<PipelineStatus>([
+  "call_booked",
+  "no_show",
+  "proposal_sent",
+  "won",
+  "lost",
+  "disqualified",
+]);
+
+type FilterValue = PipelineStatus | "all" | "all_calls";
+
 export default function LeadsPage() {
   const [rows, setRows] = useState<PipelineRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,7 +43,7 @@ export default function LeadsPage() {
   const [analysingId, setAnalysingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<PipelineStatus | "all">("all");
+  const [filter, setFilter] = useState<FilterValue>("all");
 
   useEffect(() => {
     fetch("/api/pipeline")
@@ -161,8 +172,14 @@ export default function LeadsPage() {
     {} as Record<PipelineStatus, number>
   );
 
+  const allCallsCount = rows.filter((r) => CALL_STATUSES.has(r.status)).length;
+
   const visibleRows =
-    filter === "all" ? rows : rows.filter((r) => r.status === filter);
+    filter === "all"
+      ? rows
+      : filter === "all_calls"
+      ? rows.filter((r) => CALL_STATUSES.has(r.status))
+      : rows.filter((r) => r.status === filter);
 
   const leadCount = rows.filter((r) => LEAD_STATUSES.has(r.status)).length;
   const engagementCount = rows.length - leadCount;
@@ -219,6 +236,16 @@ export default function LeadsPage() {
               }`}
             >
               All ({rows.length})
+            </button>
+            <button
+              onClick={() => setFilter("all_calls")}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                filter === "all_calls"
+                  ? "bg-vr-green text-white"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
+            >
+              All calls ({allCallsCount})
             </button>
             {FILTER_STATUSES.map((s) => (
               <button
