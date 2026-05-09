@@ -246,6 +246,9 @@ export default function PipelineRowView({
             "—"
           )}
         </td>
+        <td className="py-3 pr-4 text-xs text-gray-400 align-top">
+          {[row.utm_term, row.utm_content].filter(Boolean).join(" / ") || "—"}
+        </td>
         <td className="py-3 pr-3 text-right align-top">
           <button
             onClick={handleDeleteClick}
@@ -254,9 +257,6 @@ export default function PipelineRowView({
           >
             {deleting ? "…" : "Delete"}
           </button>
-        </td>
-        <td className="py-3 pr-4 text-xs text-gray-400 align-top">
-          {[row.utm_term, row.utm_content].filter(Boolean).join(" / ") || "—"}
         </td>
         <td className="py-3 text-gray-400 w-6 align-top">
           {canExpand ? (

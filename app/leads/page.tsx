@@ -278,8 +278,8 @@ export default function LeadsPage() {
                     <th className="text-center py-3 pr-4 font-medium text-gray-500">Fit</th>
                     <th className="text-center py-3 pr-4 font-medium text-gray-500">Call</th>
                     <th className="text-left py-3 pr-4 font-medium text-gray-500">Brief</th>
-                    <th className="text-right py-3 pr-3 font-medium text-gray-500 w-20" />
                     <th className="text-left py-3 pr-4 font-medium text-gray-500">UTMs</th>
+                    <th className="text-right py-3 pr-3 font-medium text-gray-500 w-20" />
                     <th className="py-3 w-6" />
                   </tr>
                 </thead>
