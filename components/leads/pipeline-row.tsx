@@ -309,6 +309,16 @@ function SalesCallSummary({ row }: { row: PipelineRow }) {
   ];
   const visibleFacts = facts.filter(([, v]) => v != null && v !== "");
 
+  // True when the post-call AI pipeline has produced real summary content.
+  // The actual call data supersedes the pre-call brief, so we use this to
+  // hide the pre-call <details> block at the bottom.
+  const aiSummaryPresent =
+    row.business_summary != null ||
+    row.outcome_verdict != null ||
+    row.outcome_rationale != null ||
+    row.call_strengths != null ||
+    row.call_improvements != null;
+
   // If we have a doc URL but none of the AI fields are populated, this is
   // probably a name-matched legacy doc. Tell the user to read the doc.
   const onlyDocLink =
@@ -423,34 +433,35 @@ function SalesCallSummary({ row }: { row: PipelineRow }) {
         </div>
       )}
 
-      {(row.fit_reasoning || row.likely_objection || row.meeting_angle || row.research) && (
-        <details className="text-xs text-gray-500">
-          <summary className="cursor-pointer">Pre-call research (from brief)</summary>
-          <div className="mt-2 space-y-2">
-            {row.research && (
-              <p className="whitespace-pre-wrap text-gray-700">{row.research}</p>
-            )}
-            {row.fit_reasoning && (
-              <p>
-                <span className="text-gray-500">Fit reasoning: </span>
-                <span className="text-gray-700">{row.fit_reasoning}</span>
-              </p>
-            )}
-            {row.likely_objection && (
-              <p>
-                <span className="text-gray-500">Likely objection: </span>
-                <span className="text-gray-700">{row.likely_objection}</span>
-              </p>
-            )}
-            {row.meeting_angle && (
-              <p>
-                <span className="text-gray-500">Meeting angle: </span>
-                <span className="text-gray-700">{row.meeting_angle}</span>
-              </p>
-            )}
-          </div>
-        </details>
-      )}
+      {!aiSummaryPresent &&
+        (row.fit_reasoning || row.likely_objection || row.meeting_angle || row.research) && (
+          <details className="text-xs text-gray-500">
+            <summary className="cursor-pointer">Pre-call research (from brief)</summary>
+            <div className="mt-2 space-y-2">
+              {row.research && (
+                <p className="whitespace-pre-wrap text-gray-700">{row.research}</p>
+              )}
+              {row.fit_reasoning && (
+                <p>
+                  <span className="text-gray-500">Fit reasoning: </span>
+                  <span className="text-gray-700">{row.fit_reasoning}</span>
+                </p>
+              )}
+              {row.likely_objection && (
+                <p>
+                  <span className="text-gray-500">Likely objection: </span>
+                  <span className="text-gray-700">{row.likely_objection}</span>
+                </p>
+              )}
+              {row.meeting_angle && (
+                <p>
+                  <span className="text-gray-500">Meeting angle: </span>
+                  <span className="text-gray-700">{row.meeting_angle}</span>
+                </p>
+              )}
+            </div>
+          </details>
+        )}
     </div>
   );
 }
