@@ -188,6 +188,10 @@ export interface Engagement {
   outcome_rationale: string | null;
   call_strengths: string | null;
   call_improvements: string | null;
+  // Cached doc-derived summary (populated lazily when a name-matched Drive
+  // doc is read; persists so the drawer doesn't re-run Claude on every open).
+  doc_summary: string | null;
+  doc_next_steps: string | null;
   actions_to_take: string | null;
   created_at: string;
   updated_at: string;
@@ -231,6 +235,9 @@ export interface PipelineRow {
   outcome_rationale: string | null;
   call_strengths: string | null;
   call_improvements: string | null;
+  // Cached doc-derived summary (see Engagement)
+  doc_summary: string | null;
+  doc_next_steps: string | null;
 }
 
 export interface ZoomAnalysisCategory {

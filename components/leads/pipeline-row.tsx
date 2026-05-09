@@ -310,18 +310,8 @@ function SalesCallSummary({ row }: { row: PipelineRow }) {
   ];
   const visibleFacts = facts.filter(([, v]) => v != null && v !== "");
 
-  // True when the post-call AI pipeline has produced real summary content.
-  // The actual call data supersedes the pre-call brief, so we use this to
-  // hide the pre-call <details> block at the bottom.
-  const aiSummaryPresent =
-    row.business_summary != null ||
-    row.outcome_verdict != null ||
-    row.outcome_rationale != null ||
-    row.call_strengths != null ||
-    row.call_improvements != null;
-
   // If we have a doc URL but none of the AI fields are populated, this is
-  // probably a name-matched legacy doc. Tell the user to read the doc.
+  // probably a name-matched legacy doc. Show the lazy-extracted doc summary.
   const onlyDocLink =
     row.sales_call_doc_url != null &&
     !row.business_summary &&
@@ -369,7 +359,13 @@ function SalesCallSummary({ row }: { row: PipelineRow }) {
         </div>
       </div>
 
-      {onlyDocLink && <DocSummary engagementId={row.source_id} />}
+      {onlyDocLink && (
+        <DocSummary
+          engagementId={row.source_id}
+          initialSummary={row.doc_summary}
+          initialNextSteps={row.doc_next_steps}
+        />
+      )}
 
       {visibleFacts.length > 0 && (
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-700">
@@ -430,35 +426,6 @@ function SalesCallSummary({ row }: { row: PipelineRow }) {
         </div>
       )}
 
-      {!aiSummaryPresent &&
-        (row.fit_reasoning || row.likely_objection || row.meeting_angle || row.research) && (
-          <details className="text-xs text-gray-500">
-            <summary className="cursor-pointer">Pre-call research (from brief)</summary>
-            <div className="mt-2 space-y-2">
-              {row.research && (
-                <p className="whitespace-pre-wrap text-gray-700">{row.research}</p>
-              )}
-              {row.fit_reasoning && (
-                <p>
-                  <span className="text-gray-500">Fit reasoning: </span>
-                  <span className="text-gray-700">{row.fit_reasoning}</span>
-                </p>
-              )}
-              {row.likely_objection && (
-                <p>
-                  <span className="text-gray-500">Likely objection: </span>
-                  <span className="text-gray-700">{row.likely_objection}</span>
-                </p>
-              )}
-              {row.meeting_angle && (
-                <p>
-                  <span className="text-gray-500">Meeting angle: </span>
-                  <span className="text-gray-700">{row.meeting_angle}</span>
-                </p>
-              )}
-            </div>
-          </details>
-        )}
     </div>
   );
 }
@@ -554,18 +521,33 @@ function BulletList({ text }: { text: string }) {
 }
 
 /**
- * Lazy-loaded summary for engagements whose sales call doc was matched by
- * name (no AI fields stored on the row). Fetches the doc text from Drive
- * and asks Claude for a brief summary + next steps.
+ * Summary for engagements whose sales call doc was matched by name (no full
+ * AI summary stored on the row). Reads `doc_summary` and `doc_next_steps`
+ * from the row when populated; otherwise lazy-fetches the doc-summary API
+ * which extracts via Claude and persists the result for next time.
  */
-function DocSummary({ engagementId }: { engagementId: string }) {
+function DocSummary({
+  engagementId,
+  initialSummary,
+  initialNextSteps,
+}: {
+  engagementId: string;
+  initialSummary: string | null;
+  initialNextSteps: string | null;
+}) {
+  const hasCached = initialSummary != null || initialNextSteps != null;
   const [state, setState] = useState<
     | { kind: "loading" }
     | { kind: "ready"; summary: string | null; nextSteps: string | null }
     | { kind: "error"; message: string }
-  >({ kind: "loading" });
+  >(
+    hasCached
+      ? { kind: "ready", summary: initialSummary, nextSteps: initialNextSteps }
+      : { kind: "loading" },
+  );
 
   useEffect(() => {
+    if (hasCached) return;
     let cancelled = false;
     (async () => {
       try {
@@ -588,7 +570,7 @@ function DocSummary({ engagementId }: { engagementId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [engagementId]);
+  }, [engagementId, hasCached]);
 
   if (state.kind === "loading") {
     return (

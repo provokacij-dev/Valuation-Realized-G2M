@@ -73,6 +73,8 @@ export async function GET() {
         outcome_rationale: e.outcome_rationale,
         call_strengths: e.call_strengths,
         call_improvements: e.call_improvements,
+        doc_summary: e.doc_summary ?? null,
+        doc_next_steps: e.doc_next_steps ?? null,
       });
     }
 
@@ -112,6 +114,8 @@ export async function GET() {
         outcome_rationale: null,
         call_strengths: null,
         call_improvements: null,
+        doc_summary: null,
+        doc_next_steps: null,
       });
     }
 
