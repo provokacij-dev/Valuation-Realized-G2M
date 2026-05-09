@@ -5,6 +5,8 @@ import BriefPanel from "@/components/ads/brief-panel";
 import GeneratedAdCard from "@/components/ads/generated-ad-card";
 import SkillUpdateCard from "@/components/ads/skill-update-card";
 import ImageUploadPanel from "@/components/ads/image-upload-panel";
+import UploadQueue from "@/components/upload/upload-queue";
+import SkillsManager from "@/components/skills/skills-manager";
 import type { GeneratedAd, SkillUpdateProposal, Brief } from "@/types";
 
 // ── Queue helpers ────────────────────────────────────────────────────────────
@@ -254,19 +256,13 @@ export default function AdsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-vr-green">New Ads</h1>
+          <h1 className="text-2xl font-bold text-vr-green">Ads</h1>
           {pendingCount > 0 && (
             <p className="text-xs text-gray-400 mt-0.5">
               {pendingCount} draft{pendingCount !== 1 ? "s" : ""} — approve to move to Upload Queue
             </p>
           )}
         </div>
-        <a
-          href="/upload"
-          className="text-sm font-medium text-vr-gold hover:underline"
-        >
-          Upload Queue →
-        </a>
       </div>
 
       <BriefPanel onGenerate={handleGenerate} loading={loading} />
@@ -327,7 +323,7 @@ export default function AdsPage() {
 
       {/* Skill updates */}
       {skillUpdates.length > 0 && (
-        <div className="space-y-4">
+        <div className="space-y-4 mb-10">
           <h2 className="text-lg font-semibold text-vr-green">
             Proposed Skill Updates ({skillUpdates.length})
           </h2>
@@ -346,6 +342,46 @@ export default function AdsPage() {
           ))}
         </div>
       )}
+
+      {/* Upload Queue — moved into Ads page */}
+      <section className="mb-10 pt-8 border-t border-gray-100">
+        <UploadQueue embedded />
+      </section>
+
+      {/* Skills — collapsed by default */}
+      <SkillsCollapsibleSection />
     </div>
+  );
+}
+
+function SkillsCollapsibleSection() {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="pt-8 border-t border-gray-100">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between text-left group"
+        aria-expanded={open}
+      >
+        <h2 className="text-lg font-semibold text-vr-green">Skills</h2>
+        <span className="text-sm text-gray-400 group-hover:text-gray-600 flex items-center gap-1.5">
+          {open ? "Hide" : "Show"}
+          <svg
+            className={`w-4 h-4 transition-transform ${open ? "rotate-180" : ""}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </span>
+      </button>
+      {open && (
+        <div className="mt-6">
+          <SkillsManager embedded hideTitle />
+        </div>
+      )}
+    </section>
   );
 }
