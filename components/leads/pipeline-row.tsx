@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type {
   PipelineRow,
   PipelineStatus,
@@ -368,11 +369,7 @@ function SalesCallSummary({ row }: { row: PipelineRow }) {
         </div>
       </div>
 
-      {onlyDocLink && (
-        <p className="text-xs text-gray-500 italic">
-          Matched a sales call doc by name. Open the doc above for the full summary.
-        </p>
-      )}
+      {onlyDocLink && <DocSummary engagementId={row.source_id} />}
 
       {visibleFacts.length > 0 && (
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-700">
@@ -553,5 +550,86 @@ function BulletList({ text }: { text: string }) {
         <li key={i}>{item}</li>
       ))}
     </ul>
+  );
+}
+
+/**
+ * Lazy-loaded summary for engagements whose sales call doc was matched by
+ * name (no AI fields stored on the row). Fetches the doc text from Drive
+ * and asks Claude for a brief summary + next steps.
+ */
+function DocSummary({ engagementId }: { engagementId: string }) {
+  const [state, setState] = useState<
+    | { kind: "loading" }
+    | { kind: "ready"; summary: string | null; nextSteps: string | null }
+    | { kind: "error"; message: string }
+  >({ kind: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/engagements/${engagementId}/doc-summary`);
+        const data = await res.json();
+        if (cancelled) return;
+        if (!res.ok) {
+          setState({ kind: "error", message: data.error ?? "Failed to load summary" });
+          return;
+        }
+        setState({
+          kind: "ready",
+          summary: data.summary ?? null,
+          nextSteps: data.next_steps ?? null,
+        });
+      } catch {
+        if (!cancelled) setState({ kind: "error", message: "Failed to load summary" });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [engagementId]);
+
+  if (state.kind === "loading") {
+    return (
+      <p className="text-xs text-gray-500 italic">Reading sales call doc and summarising…</p>
+    );
+  }
+
+  if (state.kind === "error") {
+    return (
+      <p className="text-xs text-red-500">
+        Couldn&rsquo;t load summary: {state.message}. Open the doc above to read the full notes.
+      </p>
+    );
+  }
+
+  if (!state.summary && !state.nextSteps) {
+    return (
+      <p className="text-xs text-gray-500 italic">
+        Matched a sales call doc by name, but couldn&rsquo;t extract a summary. Open the doc above.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {state.summary && (
+        <div>
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+            Brief summary
+          </h4>
+          <p className="text-sm text-gray-700">{state.summary}</p>
+        </div>
+      )}
+      {state.nextSteps && (
+        <div>
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+            Next steps agreed
+          </h4>
+          <BulletList text={state.nextSteps} />
+        </div>
+      )}
+    </div>
   );
 }

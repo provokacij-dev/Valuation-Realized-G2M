@@ -456,3 +456,29 @@ export function extractDocId(url: string): string | null {
   const match = url.match(/\/document\/d\/([a-zA-Z0-9_-]+)/);
   return match ? match[1] : null;
 }
+
+/**
+ * Read a Google Doc's body as plain text. Walks the document's structural
+ * elements and concatenates text runs, with a newline at the end of each
+ * paragraph so summaries don't run lines together.
+ */
+export async function getDocPlainText(docId: string): Promise<string> {
+  const auth = getAuth();
+  const docs = google.docs({ version: "v1", auth });
+  const doc = await docs.documents.get({ documentId: docId });
+
+  const parts: string[] = [];
+  const content = doc.data.body?.content ?? [];
+  for (const block of content) {
+    if (!block.paragraph) continue;
+    for (const el of block.paragraph.elements ?? []) {
+      const text = el.textRun?.content;
+      if (text) parts.push(text);
+    }
+    // Ensure paragraph break even if the last run didn't end with \n.
+    if (parts.length > 0 && !parts[parts.length - 1].endsWith("\n")) {
+      parts.push("\n");
+    }
+  }
+  return parts.join("").trim();
+}
