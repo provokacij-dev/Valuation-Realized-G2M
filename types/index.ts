@@ -135,6 +135,7 @@ export interface Lead {
   brevo_list_id: number | null;
   actions_to_take: string | null;
   created_at: string;
+  updated_at: string;
 }
 
 export type EngagementFunnelStatus =
@@ -203,6 +204,7 @@ export interface PipelineRow {
   utm_term: string | null;
   utm_content: string | null;
   created_at: string;
+  updated_at: string;
   actions_to_take: string | null;
   // engagement-only (null for lead rows)
   scheduled_at: string | null;

@@ -35,7 +35,7 @@ export default function LeadsPage() {
   const [filter, setFilter] = useState<PipelineStatus | "all">("all");
 
   useEffect(() => {
-    fetch("/api/leads")
+    fetch("/api/pipeline")
       .then((r) => r.json())
       .then((data) => {
         setRows(data.rows ?? []);
@@ -48,7 +48,7 @@ export default function LeadsPage() {
   }, []);
 
   async function reload() {
-    const r = await fetch("/api/leads");
+    const r = await fetch("/api/pipeline");
     const data = await r.json();
     setRows(data.rows ?? []);
   }
@@ -106,9 +106,12 @@ export default function LeadsPage() {
       if (!res.ok) throw new Error("Failed to save next steps");
       // Patch local state in place — no full reload, so the textarea
       // doesn't lose focus context for adjacent rows.
+      const nowIso = new Date().toISOString();
       setRows((prev) =>
         prev.map((r) =>
-          r.source_id === row.source_id ? { ...r, actions_to_take: next } : r
+          r.source_id === row.source_id
+            ? { ...r, actions_to_take: next, updated_at: nowIso }
+            : r
         )
       );
     } catch (err) {
@@ -243,6 +246,7 @@ export default function LeadsPage() {
                     <th className="text-left py-3 pr-4 font-medium text-gray-500">Email</th>
                     <th className="text-left py-3 pr-4 font-medium text-gray-500">Status</th>
                     <th className="text-left py-3 pr-4 font-medium text-gray-500">Actions to take</th>
+                    <th className="text-left py-3 pr-4 font-medium text-gray-500">Last updated</th>
                     <th className="text-left py-3 pr-4 font-medium text-gray-500">Scheduled</th>
                     <th className="text-center py-3 pr-4 font-medium text-gray-500">Fit</th>
                     <th className="text-center py-3 pr-4 font-medium text-gray-500">Call</th>

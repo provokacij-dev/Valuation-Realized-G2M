@@ -59,6 +59,21 @@ const VERDICT_COLORS: Record<OutcomeVerdict, string> = {
   loss: "bg-red-100 text-red-600",
 };
 
+/**
+ * Compact relative time: "just now", "5m ago", "3h ago", "2d ago".
+ * Falls back to a short date for anything older than 7 days.
+ */
+function relativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "—";
+  const diffSec = Math.max(0, (Date.now() - then) / 1000);
+  if (diffSec < 60) return "just now";
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+  if (diffSec < 604800) return `${Math.floor(diffSec / 86400)}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 interface Props {
   row: PipelineRow;
   isExpanded: boolean;
@@ -150,6 +165,12 @@ export default function PipelineRowView({
             disabled={updating || deleting}
             className="w-72 text-sm border border-gray-300 rounded-md px-2.5 py-2 leading-snug resize-y bg-white shadow-sm placeholder-gray-400 transition-colors focus:border-vr-green focus:ring-1 focus:ring-vr-green focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
           />
+        </td>
+        <td
+          className="py-3 pr-4 text-gray-500 text-xs align-top whitespace-nowrap"
+          title={new Date(row.updated_at).toLocaleString()}
+        >
+          {relativeTime(row.updated_at)}
         </td>
         <td className="py-3 pr-4 text-gray-500 text-xs align-top">
           {row.scheduled_at
@@ -245,7 +266,7 @@ export default function PipelineRowView({
 
       {isExpanded && canExpand && (
         <tr>
-          <td colSpan={11} className="pb-4 pt-0">
+          <td colSpan={12} className="pb-4 pt-0">
             <div className="bg-gray-50 rounded-xl p-4 mx-2 space-y-4">
               {hasSalesCallSummary ? (
                 <SalesCallSummary row={row} />
