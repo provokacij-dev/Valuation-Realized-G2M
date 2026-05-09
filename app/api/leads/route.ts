@@ -41,19 +41,25 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, status, actions_to_take } = body as {
+    const { id, status, actions_to_take, utm_term, utm_content } = body as {
       id: string;
       status?: LeadStatus;
       actions_to_take?: string | null;
+      utm_term?: string | null;
+      utm_content?: string | null;
     };
 
     const updates: {
       status?: LeadStatus;
       actions_to_take?: string | null;
+      utm_term?: string | null;
+      utm_content?: string | null;
       updated_at?: string;
     } = {};
     if (status !== undefined) updates.status = status;
     if (actions_to_take !== undefined) updates.actions_to_take = actions_to_take;
+    if (utm_term !== undefined) updates.utm_term = utm_term;
+    if (utm_content !== undefined) updates.utm_content = utm_content;
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });
