@@ -35,7 +35,7 @@ export default function LeadsPage() {
   const [filter, setFilter] = useState<PipelineStatus | "all">("all");
 
   useEffect(() => {
-    fetch("/api/pipeline")
+    fetch("/api/leads")
       .then((r) => r.json())
       .then((data) => {
         setRows(data.rows ?? []);
@@ -48,7 +48,7 @@ export default function LeadsPage() {
   }, []);
 
   async function reload() {
-    const r = await fetch("/api/pipeline");
+    const r = await fetch("/api/leads");
     const data = await r.json();
     setRows(data.rows ?? []);
   }

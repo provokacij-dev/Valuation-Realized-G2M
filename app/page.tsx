@@ -50,7 +50,7 @@ export default function DashboardPage() {
       }
 
       setPipeline({
-        leads: leadsRes.status === "fulfilled" ? (leadsRes.value.leads?.length ?? 0) : 0,
+        leads: leadsRes.status === "fulfilled" ? (leadsRes.value.rows?.filter((r: { source: string }) => r.source === "lead").length ?? 0) : 0,
         engagements: engagementsRes.status === "fulfilled" ? (engagementsRes.value.engagements?.length ?? 0) : 0,
         queue: queueRes.status === "fulfilled" ? (queueRes.value.queue?.length ?? 0) : 0,
       });
