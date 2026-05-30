@@ -33,7 +33,7 @@ export default function Nav() {
 
   return (
     <nav className="bg-vr-green text-white shadow-sm">
-      <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
+      <div className="px-6 h-14 flex items-center justify-between">
         <span className="font-semibold text-base tracking-tight">
           <span className="text-vr-gold">Valuation Realized</span>
           <span className="text-white/60 ml-2 text-sm font-normal">G2M and CRM</span>
