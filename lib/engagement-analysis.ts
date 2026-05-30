@@ -2,7 +2,7 @@ import { supabase } from "./supabase";
 import { getAnthropicClient } from "./anthropic";
 import { createSalesCallDoc, type SalesCallContent } from "./google-docs";
 import { getZoomToken } from "./zoom";
-import { sendTransactionalEmail } from "./brevo";
+import { sendInternalNotification } from "./email";
 
 // Human-readable labels for the four allowed AI verdict values.
 const VERDICT_LABELS: Record<string, string> = {
@@ -246,11 +246,11 @@ export async function runEngagementAnalysis(engagementId: string): Promise<Analy
     })
     .eq("id", engagementId);
 
-  // 6. Brevo notification (non-fatal).
+  // 6. Sales call analysis notification (non-fatal).
   const vaigaEmail = process.env.NOTIFICATION_EMAIL ?? "vr@valuationrealized.com";
   try {
     const verdictLabel = facts.outcome_verdict ? (VERDICT_LABELS[facts.outcome_verdict] ?? facts.outcome_verdict) : "Verdict unknown";
-    await sendTransactionalEmail({
+    await sendInternalNotification({
       to: vaigaEmail,
       subject: `Sales call analysis: ${engagement.name ?? engagement.email} — ${verdictLabel}`,
       htmlContent: `
@@ -265,7 +265,7 @@ export async function runEngagementAnalysis(engagementId: string): Promise<Analy
       `,
     });
   } catch (err) {
-    console.error("Brevo notify error (non-fatal):", err);
+    console.error("Sales call analysis notify error (non-fatal):", err);
   }
 
   return {

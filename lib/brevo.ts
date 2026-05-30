@@ -48,24 +48,3 @@ export async function enrollInSequence(
     emails: [email],
   });
 }
-
-/**
- * Send a transactional email via Brevo (e.g. Vaiga notification).
- */
-export async function sendTransactionalEmail(opts: {
-  to: string;
-  subject: string;
-  htmlContent: string;
-  fromEmail?: string;
-  fromName?: string;
-}): Promise<void> {
-  await brevoRequest("/smtp/email", "POST", {
-    sender: {
-      email: opts.fromEmail ?? "noreply@valuationrealized.com",
-      name: opts.fromName ?? "Valuation Realized",
-    },
-    to: [{ email: opts.to }],
-    subject: opts.subject,
-    htmlContent: opts.htmlContent,
-  });
-}

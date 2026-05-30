@@ -4,7 +4,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { supabase } from "@/lib/supabase";
 import { getAnthropicClient } from "@/lib/anthropic";
 import { createFormattedBriefDoc } from "@/lib/google-docs";
-import { sendTransactionalEmail } from "@/lib/brevo";
+import { sendInternalNotification } from "@/lib/email";
 
 // ── Signature verification ───────────────────────────────────────────────────
 
@@ -476,7 +476,7 @@ async function runPostBookingTasks(
         <p style="margin:0;color:#1a3a5c;font-size:13px;">Personal email with partial public presence. ${identityNotes ?? ""} Consider a quick WhatsApp to confirm.</p>
       </div>` : "";
 
-    await sendTransactionalEmail({
+    await sendInternalNotification({
       to: vaigaEmail,
       subject: `${isSuspicious ? "⚠️ " : isMediumRisk ? "ℹ️ " : ""}Sales brief - ${name}, ${companyName}, ${dateStr}, ${timeStr} ${tzAbbr}`,
       htmlContent: `
@@ -494,6 +494,6 @@ async function runPostBookingTasks(
       `,
     });
   } catch (err) {
-    console.error("Brevo notify error (non-fatal):", err);
+    console.error("Sales brief notify error (non-fatal):", err);
   }
 }
