@@ -163,7 +163,10 @@ export async function runEngagementAnalysis(engagementId: string): Promise<Analy
   // 2.5. Save raw transcript as a Google Doc in the Sales calls folder (non-fatal).
   try {
     const callDate = new Date(engagement.scheduled_at ?? engagement.created_at);
-    const transcriptTitle = `${engagement.name ?? engagement.email} — transcript — ${callDate.toLocaleDateString("en-GB")}`;
+    const dd = String(callDate.getDate()).padStart(2, "0");
+    const mm = String(callDate.getMonth() + 1).padStart(2, "0");
+    const yyyy = callDate.getFullYear();
+    const transcriptTitle = `${dd}/${mm}/${yyyy}, ${engagement.name ?? engagement.email}`;
     await createTranscriptDoc(transcriptTitle, transcript);
   } catch (err) {
     console.error("Transcript doc save error (non-fatal):", err);
