@@ -423,6 +423,52 @@ export async function createSalesCallDoc(
 }
 
 /**
+ * Save a raw Zoom transcript as a Google Doc in GOOGLE_CONDUCTEDSALES_CALLS_FOLDER_ID.
+ * Creates a simple doc: HEADING_1 title, then the transcript text verbatim.
+ * Returns the doc URL. Non-fatal callers should wrap in try/catch.
+ */
+export async function createTranscriptDoc(
+  title: string,
+  transcriptText: string,
+): Promise<string> {
+  const folderId = process.env.GOOGLE_CONDUCTEDSALES_CALLS_FOLDER_ID;
+  if (!folderId) throw new Error("GOOGLE_CONDUCTEDSALES_CALLS_FOLDER_ID not configured");
+
+  const auth = getAuth();
+  const docs = google.docs({ version: "v1", auth });
+  const drive = google.drive({ version: "v3", auth });
+
+  const file = await drive.files.create({
+    requestBody: {
+      name: title,
+      mimeType: "application/vnd.google-apps.document",
+      parents: [folderId],
+    },
+    fields: "id",
+  });
+  const docId = file.data.id!;
+
+  const body = title + "\n\n" + transcriptText;
+  await docs.documents.batchUpdate({
+    documentId: docId,
+    requestBody: {
+      requests: [
+        { insertText: { location: { index: 1 }, text: body } },
+        {
+          updateParagraphStyle: {
+            range: { startIndex: 1, endIndex: title.length + 2 },
+            paragraphStyle: { namedStyleType: "HEADING_1" },
+            fields: "namedStyleType",
+          },
+        },
+      ],
+    },
+  });
+
+  return `https://docs.google.com/document/d/${docId}/edit`;
+}
+
+/**
  * Append plain text to an existing Google Doc identified by docId.
  * Kept for backward compatibility.
  */

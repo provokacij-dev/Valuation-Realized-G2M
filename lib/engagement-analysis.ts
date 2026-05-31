@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 import { getAnthropicClient } from "./anthropic";
-import { createSalesCallDoc, type SalesCallContent } from "./google-docs";
+import { createSalesCallDoc, createTranscriptDoc, type SalesCallContent } from "./google-docs";
 import { getZoomToken } from "./zoom";
 import { sendInternalNotification } from "./email";
 import { appendCallToMasterSummary } from "./call-summary-updater";
@@ -104,6 +104,7 @@ export type AnalysisResult = {
 /**
  * Post-call analysis pipeline for a single engagement:
  *   download transcript from Zoom
+ *   → save raw transcript as a Google Doc in Sales calls folder
  *   → run Claude post-call extraction (business summary + verdict + coaching)
  *   → create a NEW Google Doc in the Sales calls folder (3-block layout)
  *   → update Supabase engagement row with extracted fields and doc URL
@@ -157,6 +158,15 @@ export async function runEngagementAnalysis(engagementId: string): Promise<Analy
   } catch (err) {
     console.error("Transcript download error:", err);
     return { success: false, sales_call_doc_url: null, outcome_verdict: null, error: "Transcript download failed" };
+  }
+
+  // 2.5. Save raw transcript as a Google Doc in the Sales calls folder (non-fatal).
+  try {
+    const callDate = new Date(engagement.scheduled_at ?? engagement.created_at);
+    const transcriptTitle = `${engagement.name ?? engagement.email} — transcript — ${callDate.toLocaleDateString("en-GB")}`;
+    await createTranscriptDoc(transcriptTitle, transcript);
+  } catch (err) {
+    console.error("Transcript doc save error (non-fatal):", err);
   }
 
   // 3. Claude post-call extraction.
