@@ -3,6 +3,7 @@ import { getAnthropicClient } from "./anthropic";
 import { createSalesCallDoc, type SalesCallContent } from "./google-docs";
 import { getZoomToken } from "./zoom";
 import { sendInternalNotification } from "./email";
+import { appendCallToMasterSummary } from "./call-summary-updater";
 
 // Human-readable labels for the four allowed AI verdict values.
 const VERDICT_LABELS: Record<string, string> = {
@@ -107,6 +108,7 @@ export type AnalysisResult = {
  *   → create a NEW Google Doc in the Sales calls folder (3-block layout)
  *   → update Supabase engagement row with extracted fields and doc URL
  *   → send Brevo notification email
+ *   → append entry to master call summary Drive file
  *
  * All side effects after the analysis are non-fatal (errors logged but the
  * subsequent steps still attempt to run).
@@ -256,7 +258,7 @@ export async function runEngagementAnalysis(engagementId: string): Promise<Analy
       htmlContent: `
         <h2>Sales Call Analysis</h2>
         <p><strong>${engagement.name ?? engagement.email}</strong></p>
-        ${salesCallDocUrl ? `<p><strong><a href="${salesCallDocUrl}">Open Sales Call Doc →</a></strong></p>` : ""}
+        ${salesCallDocUrl ? `<p><strong><a href="${salesCallDocUrl}">Open Sales Call Doc &rarr;</a></strong></p>` : ""}
         ${facts.business_summary ? `<p><strong>Business:</strong> ${facts.business_summary}</p>` : ""}
         ${facts.pain_point ? `<p><strong>Pain point / ask:</strong> ${facts.pain_point}</p>` : ""}
         <p><strong>Outcome:</strong> ${verdictLabel}${facts.outcome_rationale ? ` — ${facts.outcome_rationale}` : ""}</p>
@@ -266,6 +268,13 @@ export async function runEngagementAnalysis(engagementId: string): Promise<Analy
     });
   } catch (err) {
     console.error("Sales call analysis notify error (non-fatal):", err);
+  }
+
+  // 7. Append to master call summary Drive file (non-fatal).
+  try {
+    await appendCallToMasterSummary(engagementId);
+  } catch (err) {
+    console.error("Master call summary append error (non-fatal):", err);
   }
 
   return {
