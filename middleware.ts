@@ -8,6 +8,9 @@ import { NextRequest, NextResponse } from "next/server";
  * is configured in Vercel; enforcement turns on the moment the secret is
  * present.
  *
+ * Same-origin browser requests (sec-fetch-site: same-origin) are always
+ * allowed — these come from the UI itself, not external callers.
+ *
  * Public webhook routes are skipped (they have their own provider secrets).
  *
  * Runs on the Next.js Edge runtime, so the comparison is implemented in
@@ -44,6 +47,12 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (isPublicPath(pathname)) {
+    return NextResponse.next();
+  }
+
+  // Same-origin browser fetches (from the UI itself) are always allowed.
+  // Browsers set this header automatically; external callers do not.
+  if (request.headers.get("sec-fetch-site") === "same-origin") {
     return NextResponse.next();
   }
 
