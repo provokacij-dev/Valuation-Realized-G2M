@@ -42,7 +42,7 @@ export async function appendCallToMasterSummary(engagementId: string): Promise<v
     const existing = Buffer.concat(chunks).toString("utf-8");
 
     // 2. Fetch engagement from Supabase.
-    const { data: eng } = await supabase
+    const { data: eng, error: engFetchError } = await supabase
       .from("engagements")
       .select(
         "name, email, sector, geography, last_revenue, last_profit, indicative_valuation, " +
@@ -52,7 +52,7 @@ export async function appendCallToMasterSummary(engagementId: string): Promise<v
       .eq("id", engagementId)
       .single();
 
-    if (!eng) return;
+    if (engFetchError || !eng) return;
 
     // 3. Determine next call number from existing table rows.
     const numMatches = [...existing.matchAll(/^\| (\d+) \|/gm)];
