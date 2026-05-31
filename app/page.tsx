@@ -78,7 +78,6 @@ export default function DashboardPage() {
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      // Give Make a few seconds to process then reload
       setTimeout(() => loadData(), 5000);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Refresh failed");
@@ -125,10 +124,10 @@ export default function DashboardPage() {
           )}
         </div>
 
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex flex-col items-start sm:items-end gap-2 w-full sm:w-auto">
           {/* Date range + action buttons */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-3 py-2 w-full sm:w-auto">
               <input
                 type="date"
                 value={dateFrom}
@@ -179,7 +178,7 @@ export default function DashboardPage() {
 
       {/* Pipeline strip */}
       {pipeline !== null && (
-        <div className="grid grid-cols-3 gap-3 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
           <a href="/leads" className="bg-white border border-gray-100 rounded-xl px-4 py-3 flex items-center gap-3 hover:border-vr-green transition-colors group">
             <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
               <svg className="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
