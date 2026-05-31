@@ -115,8 +115,6 @@ export default function LeadsPage() {
         body: JSON.stringify({ id: row.source_id, actions_to_take: next }),
       });
       if (!res.ok) throw new Error("Failed to save next steps");
-      // Patch local state in place — no full reload, so the textarea
-      // doesn't lose focus context for adjacent rows.
       const nowIso = new Date().toISOString();
       setRows((prev) =>
         prev.map((r) =>
@@ -225,7 +223,7 @@ export default function LeadsPage() {
       )}
 
       {!loading && !error && (
-        <div className="bg-white border border-gray-200 rounded-xl p-6">
+        <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-6">
           <div className="flex flex-wrap gap-2 mb-4">
             <button
               onClick={() => setFilter("all")}
