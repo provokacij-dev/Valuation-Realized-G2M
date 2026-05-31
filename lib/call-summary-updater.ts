@@ -2,6 +2,25 @@ import { google } from "googleapis";
 import { getGoogleOAuth2Client } from "./google-auth";
 import { supabase } from "./supabase";
 
+type EngRow = {
+  name: string | null;
+  email: string | null;
+  sector: string | null;
+  geography: string | null;
+  last_revenue: string | null;
+  last_profit: string | null;
+  indicative_valuation: string | null;
+  business_summary: string | null;
+  pain_point: string | null;
+  outcome_verdict: string | null;
+  outcome_rationale: string | null;
+  call_strengths: string | null;
+  call_improvements: string | null;
+  fit_score: number | null;
+  scheduled_at: string | null;
+  sales_call_doc_url: string | null;
+};
+
 function fitLabel(score: number | null): string {
   if (score === null) return "Unknown";
   if (score >= 9) return "High";
@@ -42,7 +61,9 @@ export async function appendCallToMasterSummary(engagementId: string): Promise<v
     const existing = Buffer.concat(chunks).toString("utf-8");
 
     // 2. Fetch engagement from Supabase.
-    const { data: eng, error: engFetchError } = await supabase
+    // Cast via unknown: Supabase infers data as `T | GenericStringError` without
+    // generated DB types, so the error-union branch must be stripped explicitly.
+    const { data: engRaw, error: engFetchError } = await supabase
       .from("engagements")
       .select(
         "name, email, sector, geography, last_revenue, last_profit, indicative_valuation, " +
@@ -52,7 +73,9 @@ export async function appendCallToMasterSummary(engagementId: string): Promise<v
       .eq("id", engagementId)
       .single();
 
-    if (engFetchError || !eng) return;
+    if (engFetchError || !engRaw) return;
+
+    const eng = engRaw as unknown as EngRow;
 
     // 3. Determine next call number from existing table rows.
     const numMatches = [...existing.matchAll(/^\| (\d+) \|/gm)];
@@ -67,9 +90,9 @@ export async function appendCallToMasterSummary(engagementId: string): Promise<v
     const industry = eng.sector ?? "Unknown";
     const geo = eng.geography ?? "Unknown";
     const revenue = eng.last_revenue ?? "—";
-    const icpFit = fitLabel(eng.fit_score as number | null);
+    const icpFit = fitLabel(eng.fit_score);
     const objective = eng.pain_point
-      ? (eng.pain_point as string).replace(/\|/g, ",").slice(0, 80)
+      ? eng.pain_point.replace(/\|/g, ",").slice(0, 80)
       : "—";
     const docLink = eng.sales_call_doc_url
       ? `[doc](${eng.sales_call_doc_url})`
@@ -81,7 +104,7 @@ export async function appendCallToMasterSummary(engagementId: string): Promise<v
       loss: "Disqualified",
     };
     const statusLabel = eng.outcome_verdict
-      ? (VERDICT_LABELS[eng.outcome_verdict as string] ?? (eng.outcome_verdict as string))
+      ? (VERDICT_LABELS[eng.outcome_verdict] ?? eng.outcome_verdict)
       : "—";
 
     // 4. Build new summary table row (columns match master file header).
@@ -111,9 +134,9 @@ export async function appendCallToMasterSummary(engagementId: string): Promise<v
       : (eng.outcome_verdict ?? "—");
     lines.push(`- **Outcome:** ${verdictLine}`);
     if (eng.call_strengths)
-      lines.push(`- **What went well:** ${(eng.call_strengths as string).replace(/\n/g, "; ")}`);
+      lines.push(`- **What went well:** ${eng.call_strengths.replace(/\n/g, "; ")}`);
     if (eng.call_improvements)
-      lines.push(`- **What to improve:** ${(eng.call_improvements as string).replace(/\n/g, "; ")}`);
+      lines.push(`- **What to improve:** ${eng.call_improvements.replace(/\n/g, "; ")}`);
     if (eng.sales_call_doc_url)
       lines.push(`- **Call doc:** [Open](${eng.sales_call_doc_url})`);
     const detailedSection = lines.join("\n");
