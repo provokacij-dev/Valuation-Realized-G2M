@@ -33,13 +33,13 @@ export default function Nav() {
 
   return (
     <nav className="bg-vr-green text-white shadow-sm">
-      <div className="px-6 h-14 flex items-center justify-between">
-        <span className="font-semibold text-base tracking-tight">
+      <div className="px-4 sm:px-6 h-14 flex items-center justify-between">
+        <span className="font-semibold text-sm sm:text-base tracking-tight truncate mr-2">
           <span className="text-vr-gold">Valuation Realized</span>
-          <span className="text-white/60 ml-2 text-sm font-normal">G2M and CRM</span>
+          <span className="text-white/60 ml-2 text-sm font-normal hidden sm:inline">G2M and CRM</span>
         </span>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 shrink-0">
           {links.map((link) => {
             const isActive =
               link.href === "/"
@@ -49,7 +49,7 @@ export default function Nav() {
               <Link
                 key={link.href}
                 href={link.href}
-                className={`relative px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                className={`relative px-2.5 sm:px-3 py-1.5 rounded text-sm font-medium transition-colors ${
                   isActive
                     ? "bg-white/15 text-white"
                     : "text-white/70 hover:text-white hover:bg-white/10"
